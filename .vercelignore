@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+data/**
+!data/.gitkeep
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+scripts/export-sqlite.py
+scripts/import-sqlite-export.js
+old-prototype.html

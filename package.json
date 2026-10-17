@@ -1,0 +1,28 @@
+{
+  "name": "ckxchange-fullstack",
+  "version": "2.0.0",
+  "private": true,
+  "description": "CKXchange prepared for Vercel Functions and MongoDB Atlas, with protected admin panel and deposit/payout workflows",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "create-admin": "node scripts/create-admin.js",
+    "check": "node --check server.js && node --check lib/domain.js && node --check lib/mongo.js && node --check public/app.js && node --check scripts/create-admin.js && node --check scripts/import-sqlite-export.js && node --check scripts/unit-test.js && node --check scripts/smoke-test.js && node --check scripts/check-ui.js && node scripts/check-ui.js && node --check scripts/check-vercel.js && node scripts/check-vercel.js && python3 -m py_compile scripts/export-sqlite.py",
+    "test": "node scripts/unit-test.js",
+    "test:integration": "node scripts/smoke-test.js",
+    "migrate:sqlite:export": "python3 scripts/export-sqlite.py",
+    "migrate:sqlite:import": "node scripts/import-sqlite-export.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "connect-mongo": "^6.0.0",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "helmet": "^8.1.0",
+    "mongodb": "^7.7.0"
+  }
+}
