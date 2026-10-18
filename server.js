@@ -277,6 +277,38 @@ async function depositSettingsDto() {
 async function writeSetting(key, value, adminId, session) {
   await db.collection('app_settings').replaceOne({ _id: key }, { _id: key, setting_value: String(value), updated_by: adminId, updated_at: now() }, { upsert: true, session });
 }
+function normalizeTelegramUsername(value) {
+  const username = String(value ?? '').trim().replace(/^@/, '');
+  if (!username) return '';
+  if (!/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username)) throw new Error('TELEGRAM_USERNAME_INVALID');
+  return username;
+}
+async function currentTelegramSupportUsername(session = null) {
+  const options = session ? { session, projection: { setting_value: 1 } } : { projection: { setting_value: 1 } };
+  const row = await db.collection('app_settings').findOne({ _id: 'telegram_support_username' }, options);
+  try { return normalizeTelegramUsername(row?.setting_value || ''); } catch (_) { return ''; }
+}
+function parseListParams(req) {
+  const asInteger = (value, fallback, min, max) => {
+    const number = Number.parseInt(String(value ?? ''), 10);
+    return Number.isInteger(number) ? Math.max(min, Math.min(max, number)) : fallback;
+  };
+  return {
+    page: asInteger(req.query.page, 1, 1, 1_000_000),
+    pageSize: asInteger(req.query.pageSize, 25, 1, 100),
+    q: String(req.query.q || '').trim().slice(0, 80)
+  };
+}
+function escapedRegExp(value) { return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+async function matchingUserIds(q) {
+  if (!q) return [];
+  const regex = new RegExp(escapedRegExp(q), 'i');
+  const rows = await db.collection('users').find({ $or: [{ _id: regex }, { name: regex }, { email: regex }] }, { projection: { _id: 1 } }).limit(500).toArray();
+  return rows.map(row => row._id);
+}
+function paginationDto(page, pageSize, total) {
+  return { page, pageSize, total, pages: Math.max(1, Math.ceil(total / pageSize)) };
+}
 async function runTransaction(work) { return inTransaction(mongoClient, work); }
 
 // Public bootstrap and account endpoints.
@@ -331,7 +363,85 @@ app.post('/api/auth/logout', requireAuth, (req, res, next) => {
     res.json({ ok: true });
   });
 });
+// Account deletion preserves financial reconciliation while removing direct profile and bank identifiers.
+app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, next) => {
+  const userId = req.user._id;
+  const password = String(req.body?.password || '');
+  const confirmation = String(req.body?.confirmation || '');
+  if (req.user.role !== 'user') return apiError(res, 403, 'Administrator accounts cannot be deleted from the customer settings page.');
+  if (confirmation !== 'DELETE') return apiError(res, 400, 'Type DELETE to confirm account deletion.');
+  if (!password || password.length > 128) return apiError(res, 400, 'Enter your current password to continue.');
+
+  let markedForDeletion = false;
+  let deleted = false;
+  try {
+    const current = await db.collection('users').findOne({ _id: userId, status: 'active', role: 'user' }, { projection: { password_hash: 1 } });
+    if (!current) return apiError(res, 409, 'This account is no longer active. Please sign in again or contact support.');
+    if (!(await bcrypt.compare(password, current.password_hash))) return apiError(res, 403, 'The current password is incorrect.');
+
+    const locked = await db.collection('users').updateOne(
+      { _id: userId, status: 'active', role: 'user' },
+      { $set: { status: 'deleting', deletion_requested_at: now() } }
+    );
+    if (locked.modifiedCount !== 1) return apiError(res, 409, 'The account could not be locked for deletion. Refresh and try again.');
+    markedForDeletion = true;
+
+    const deletedUserRef = `DELETED-${crypto.createHmac('sha256', ENCRYPTION_KEY).update(`deleted-user:${userId}`).digest('hex').slice(0, 32).toUpperCase()}`;
+    await runTransaction(async mongoSession => {
+      const users = db.collection('users');
+      const transactions = db.collection('transactions');
+      const user = await users.findOne({ _id: userId, role: 'user', status: 'deleting' }, { session: mongoSession });
+      if (!user) throw new Error('DELETE_ACCOUNT_UNAVAILABLE');
+      if (Number(user.available_usdt_micro || 0) !== 0 || Number(user.reserved_usdt_micro || 0) !== 0) throw new Error('DELETE_BLOCKED_BALANCE');
+      const openRequests = await transactions.countDocuments({ user_id: userId, status: { $in: ['pending', 'processing'] } }, { session: mongoSession });
+      if (openRequests > 0) throw new Error('DELETE_BLOCKED_REQUESTS');
+
+      const deletedAt = now();
+      await transactions.updateMany(
+        { user_id: userId },
+        {
+          $set: { user_id: deletedUserRef, user_deleted: true, user_deleted_at: deletedAt },
+          $unset: { bank_id: '', bank_cipher: '', bank_holder: '', bank_last4: '', bank_name: '', branch_name: '', ifsc: '' }
+        },
+        { session: mongoSession }
+      );
+      await db.collection('ledger').updateMany({ user_id: userId }, { $set: { user_id: deletedUserRef, user_deleted: true } }, { session: mongoSession });
+      await db.collection('banks').deleteMany({ user_id: userId }, { session: mongoSession });
+      // connect-mongo versions may store the session payload as either an object or JSON text.
+      const sessionsCollection = db.collection('sessions');
+      const sessionJsonMatch = new RegExp(`\"userId\"\\s*:\\s*\"${escapedRegExp(userId)}\"`);
+      const matchingSessions = await sessionsCollection.find({ $or: [{ 'session.userId': userId }, { session: sessionJsonMatch }] }, { session: mongoSession, projection: { _id: 1 } }).toArray();
+      if (matchingSessions.length) await sessionsCollection.deleteMany({ _id: { $in: matchingSessions.map(row => row._id) } }, { session: mongoSession });
+      await db.collection('audit_log').insertOne({
+        _id: id('AUD'), actor_id: deletedUserRef, actor_role: 'user', admin_id: null,
+        action: 'user_account_deleted', target_id: deletedUserRef,
+        details: { financialRecordsPreserved: true, directProfileAndBankDataRemoved: true }, created_at: deletedAt
+      }, { session: mongoSession });
+      const removed = await users.deleteOne({ _id: userId, status: 'deleting', role: 'user' }, { session: mongoSession });
+      if (removed.deletedCount !== 1) throw new Error('DELETE_ACCOUNT_UNAVAILABLE');
+    });
+    deleted = true;
+    req.session.destroy(error => {
+      if (error) return next(error);
+      res.clearCookie('ckx.sid', { path: '/', sameSite: 'lax', secure: IS_PROD, httpOnly: true });
+      return res.json({ ok: true, message: 'Your account has been deleted. Financial records required for reconciliation were retained without your direct profile or bank account details.' });
+    });
+  } catch (error) {
+    if (markedForDeletion && !deleted) {
+      try { await db.collection('users').updateOne({ _id: userId, status: 'deleting' }, { $set: { status: 'active' }, $unset: { deletion_requested_at: '' } }); }
+      catch (restoreError) { console.error('[account-delete-restore-failed]', restoreError?.message || restoreError); }
+    }
+    if (error.message === 'DELETE_BLOCKED_BALANCE') return apiError(res, 409, 'Account deletion is blocked while your available or reserved USDT balance is not zero. Resolve the balance first.');
+    if (error.message === 'DELETE_BLOCKED_REQUESTS') return apiError(res, 409, 'Account deletion is blocked while deposits or payouts are Pending or Processing. Wait until all requests are resolved.');
+    if (error.message === 'DELETE_ACCOUNT_UNAVAILABLE') return apiError(res, 409, 'This account is no longer available for deletion. Please sign in again.');
+    return next(error);
+  }
+});
 app.get('/api/state', requireAuth, async (req, res, next) => { try { res.json(await getUserState(req.user._id)); } catch (error) { next(error); } });
+app.get('/api/support', async (req, res, next) => {
+  try { res.set('Cache-Control', 'no-store'); res.json({ telegramUsername: await currentTelegramSupportUsername() }); }
+  catch (error) { next(error); }
+});
 
 // Bank management: account number is encrypted; bank and branch fields come from Razorpay IFSC directory.
 app.get('/api/banks', requireAuth, async (req, res, next) => {
@@ -354,8 +464,17 @@ app.post('/api/banks', requireAuth, mutationLimiter, async (req, res, next) => {
     } catch (_) { return apiError(res, 502, 'Could not verify the IFSC with the bank directory. Try again.'); }
     if (!bankInfo.bank || !bankInfo.branch) return apiError(res, 400, 'Bank directory returned incomplete details.');
     const bank = { _id: id('BNK'), user_id: req.user._id, holder, account_cipher: encryptAccount(account), account_fingerprint: fingerprint(req.user._id, account), account_last4: account.slice(-4), ifsc, bank_name: bankInfo.bank, branch_name: bankInfo.branch, created_at: now() };
-    try { await db.collection('banks').insertOne(bank); }
-    catch (error) { if (duplicateKeyError(error)) return apiError(res, 409, 'This bank account is already saved.'); throw error; }
+    try {
+      await runTransaction(async mongoSession => {
+        const active = await db.collection('users').updateOne({ _id: req.user._id, role: 'user', status: 'active' }, { $inc: { activity_seq: 1 } }, { session: mongoSession });
+        if (active.modifiedCount !== 1) throw new Error('ACCOUNT_NOT_ACTIVE');
+        await db.collection('banks').insertOne(bank, { session: mongoSession });
+      });
+    } catch (error) {
+      if (duplicateKeyError(error)) return apiError(res, 409, 'This bank account is already saved.');
+      if (error.message === 'ACCOUNT_NOT_ACTIVE') return apiError(res, 409, 'Your account is not active. Please sign in again.');
+      throw error;
+    }
     res.status(201).json({ bank: bankDto(bank) });
   } catch (error) { next(error); }
 });
@@ -385,6 +504,23 @@ app.put('/api/admin/settings/deposits', mutationLimiter, async (req, res, next) 
     res.json({ ok: true, ...(await depositSettingsDto()), message: 'TRC20 receiving address and exchange rate saved.' });
   } catch (error) { next(error); }
 });
+app.get('/api/admin/settings/support', async (req, res, next) => {
+  try { res.json({ telegramUsername: await currentTelegramSupportUsername() }); }
+  catch (error) { next(error); }
+});
+app.put('/api/admin/settings/support', mutationLimiter, async (req, res, next) => {
+  try {
+    let username;
+    try { username = normalizeTelegramUsername(req.body?.telegramUsername); }
+    catch (error) { if (error.message === 'TELEGRAM_USERNAME_INVALID') return apiError(res, 400, 'Enter a valid Telegram username (5–32 letters, numbers, or underscores).'); throw error; }
+    const previous = await currentTelegramSupportUsername();
+    await runTransaction(async mongoSession => {
+      await writeSetting('telegram_support_username', username, req.user._id, mongoSession);
+      await audit(req.user._id, 'telegram_support_username_updated', null, { previousConfigured: !!previous, newConfigured: !!username }, mongoSession);
+    });
+    res.json({ ok: true, telegramUsername: username, message: username ? 'Telegram customer support saved.' : 'Telegram customer support link disabled.' });
+  } catch (error) { next(error); }
+});
 app.get('/api/transactions', requireAuth, async (req, res, next) => {
   try { const rows = await db.collection('transactions').find({ user_id: req.user._id }).sort({ created_at: -1 }).limit(500).toArray(); res.json({ transactions: rows.map(row => transactionDto(row)) }); }
   catch (error) { next(error); }
@@ -408,8 +544,17 @@ app.post('/api/deposits', requireAuth, mutationLimiter, async (req, res, next) =
     if (!Number.isSafeInteger(amountPaise) || amountPaise < 0) return apiError(res, 400, 'Deposit amount is outside the supported currency range.');
     const transaction = { _id: txId, user_id: req.user._id, type: 'deposit', status: 'pending', amount_paise: amountPaise, usdt_micro: usdtMicro,
       network, tx_hash: txHash, deposit_address: depositAddress.address, created_at: created, updated_at: created };
-    try { await db.collection('transactions').insertOne(transaction); }
-    catch (error) { if (duplicateKeyError(error)) return apiError(res, 409, 'This transaction hash has already been submitted for this network.'); throw error; }
+    try {
+      await runTransaction(async mongoSession => {
+        const active = await db.collection('users').updateOne({ _id: req.user._id, role: 'user', status: 'active' }, { $inc: { activity_seq: 1 } }, { session: mongoSession });
+        if (active.modifiedCount !== 1) throw new Error('ACCOUNT_NOT_ACTIVE');
+        await db.collection('transactions').insertOne(transaction, { session: mongoSession });
+      });
+    } catch (error) {
+      if (duplicateKeyError(error)) return apiError(res, 409, 'This transaction hash has already been submitted for this network.');
+      if (error.message === 'ACCOUNT_NOT_ACTIVE') return apiError(res, 409, 'Your account is not active. Please sign in again.');
+      throw error;
+    }
     res.status(201).json({ transaction: transactionDto(transaction), message: 'Deposit submitted. It will remain pending until an administrator verifies it.' });
   } catch (error) { next(error); }
 });
@@ -427,9 +572,10 @@ app.post('/api/payouts', requireAuth, mutationLimiter, async (req, res, next) =>
     const txId = id('PAY'); const created = now();
     const transaction = await runTransaction(async mongoSession => {
       const users = db.collection('users');
-      const user = await users.findOne({ _id: req.user._id }, { session: mongoSession, projection: { available_usdt_micro: 1 } });
-      if (!user || user.available_usdt_micro < usdtMicro) throw new Error('INSUFFICIENT_BALANCE');
-      const changed = await users.updateOne({ _id: req.user._id, available_usdt_micro: { $gte: usdtMicro } }, { $inc: { available_usdt_micro: -usdtMicro, reserved_usdt_micro: usdtMicro } }, { session: mongoSession });
+      const user = await users.findOne({ _id: req.user._id, role: 'user', status: 'active' }, { session: mongoSession, projection: { available_usdt_micro: 1 } });
+      if (!user) throw new Error('ACCOUNT_NOT_ACTIVE');
+      if (user.available_usdt_micro < usdtMicro) throw new Error('INSUFFICIENT_BALANCE');
+      const changed = await users.updateOne({ _id: req.user._id, role: 'user', status: 'active', available_usdt_micro: { $gte: usdtMicro } }, { $inc: { available_usdt_micro: -usdtMicro, reserved_usdt_micro: usdtMicro } }, { session: mongoSession });
       if (changed.modifiedCount !== 1) throw new Error('INSUFFICIENT_BALANCE');
       const txn = { _id: txId, user_id: req.user._id, type: 'payout', status: 'pending', amount_paise: amountPaise, usdt_micro: usdtMicro,
         bank_id: bank._id, bank_holder: bank.holder, bank_cipher: bank.account_cipher, bank_last4: bank.account_last4, bank_name: bank.bank_name,
@@ -439,7 +585,7 @@ app.post('/api/payouts', requireAuth, mutationLimiter, async (req, res, next) =>
       return txn;
     });
     res.status(201).json({ transaction: transactionDto(transaction), message: 'Payout request created and funds reserved. Status: Pending.' });
-  } catch (error) { if (error.message === 'INSUFFICIENT_BALANCE') return apiError(res, 409, 'Insufficient available USDT balance. The request was not created.'); next(error); }
+  } catch (error) { if (error.message === 'INSUFFICIENT_BALANCE') return apiError(res, 409, 'Insufficient available USDT balance. The request was not created.'); if (error.message === 'ACCOUNT_NOT_ACTIVE') return apiError(res, 409, 'Your account is not active. Please sign in again.'); next(error); }
 });
 
 // Admin APIs are centrally protected. Aggregations and state transitions execute against MongoDB.
@@ -462,27 +608,51 @@ app.get('/api/admin/transactions', async (req, res, next) => {
     if (type === 'deposit') filter = { type: 'deposit', status: 'pending' };
     else if (type === 'payout') filter = { type: 'payout', status: { $in: ['pending', 'processing'] } };
     else return apiError(res, 400, 'Transaction type must be deposit or payout.');
-    const rows = await db.collection('transactions').find(filter).sort({ created_at: 1 }).limit(200).toArray();
-    if (type === 'payout') rows.sort((a, b) => (a.status === b.status ? a.created_at.localeCompare(b.created_at) : a.status === 'pending' ? -1 : 1));
+    const { page: requestedPage, pageSize, q } = parseListParams(req);
+    if (q) {
+      const regex = new RegExp(escapedRegExp(q), 'i');
+      const userIds = await matchingUserIds(q);
+      filter = { $and: [filter, { $or: [{ _id: regex }, { tx_hash: regex }, { user_id: regex }, ...(userIds.length ? [{ user_id: { $in: userIds } }] : [])] }] };
+    }
+    const total = await db.collection('transactions').countDocuments(filter);
+    const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
+    const sort = type === 'payout' ? { status: 1, created_at: 1 } : { created_at: 1 };
+    const rows = await db.collection('transactions').find(filter).sort(sort).skip((page - 1) * pageSize).limit(pageSize).toArray();
     const userIds = [...new Set(rows.map(row => row.user_id))];
-    const users = await db.collection('users').find({ _id: { $in: userIds } }, { projection: { name: 1, email: 1 } }).toArray();
+    const users = userIds.length ? await db.collection('users').find({ _id: { $in: userIds } }, { projection: { name: 1, email: 1 } }).toArray() : [];
     const userMap = new Map(users.map(user => [user._id, user]));
-    res.json({ transactions: rows.map(row => ({ ...transactionDto(row, true), userName: userMap.get(row.user_id)?.name || 'Unknown user', userEmail: userMap.get(row.user_id)?.email || '' })) });
+    res.json({
+      transactions: rows.map(row => ({ ...transactionDto(row, true), userName: userMap.get(row.user_id)?.name || (row.user_deleted ? 'Deleted account' : 'Unknown user'), userEmail: userMap.get(row.user_id)?.email || '' })),
+      pagination: paginationDto(page, pageSize, total)
+    });
   } catch (error) { next(error); }
 });
 app.get('/api/admin/users', async (req, res, next) => {
   try {
-    const rows = await db.collection('users').find({}, { projection: { name: 1, email: 1, role: 1, status: 1, available_usdt_micro: 1, reserved_usdt_micro: 1, created_at: 1 } }).sort({ created_at: -1 }).limit(500).toArray();
-    res.json({ users: rows.map(auditSafeUser) });
+    const { page: requestedPage, pageSize, q } = parseListParams(req);
+    const filter = q ? { $or: [{ _id: new RegExp(escapedRegExp(q), 'i') }, { name: new RegExp(escapedRegExp(q), 'i') }, { email: new RegExp(escapedRegExp(q), 'i') }] } : {};
+    const total = await db.collection('users').countDocuments(filter);
+    const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
+    const rows = await db.collection('users').find(filter, { projection: { name: 1, email: 1, role: 1, status: 1, available_usdt_micro: 1, reserved_usdt_micro: 1, created_at: 1 } }).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
+    res.json({ users: rows.map(auditSafeUser), pagination: paginationDto(page, pageSize, total) });
   } catch (error) { next(error); }
 });
 app.get('/api/admin/audit', async (req, res, next) => {
   try {
-    const rows = await db.collection('audit_log').find({}).sort({ created_at: -1 }).limit(40).toArray();
-    const adminIds = [...new Set(rows.map(row => row.admin_id))];
-    const admins = await db.collection('users').find({ _id: { $in: adminIds } }, { projection: { name: 1, email: 1 } }).toArray();
+    const { page: requestedPage, pageSize, q } = parseListParams(req);
+    let filter = {};
+    if (q) {
+      const regex = new RegExp(escapedRegExp(q), 'i');
+      const userIds = await matchingUserIds(q);
+      filter = { $or: [{ action: regex }, { target_id: regex }, { admin_id: regex }, ...(userIds.length ? [{ admin_id: { $in: userIds } }] : [])] };
+    }
+    const total = await db.collection('audit_log').countDocuments(filter);
+    const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
+    const rows = await db.collection('audit_log').find(filter).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
+    const adminIds = [...new Set(rows.map(row => row.admin_id).filter(Boolean))];
+    const admins = adminIds.length ? await db.collection('users').find({ _id: { $in: adminIds } }, { projection: { name: 1, email: 1 } }).toArray() : [];
     const map = new Map(admins.map(user => [user._id, user]));
-    res.json({ entries: rows.map(row => ({ id: row._id, action: row.action, targetId: row.target_id, details: row.details || {}, createdAt: row.created_at, adminName: map.get(row.admin_id)?.name || 'Unknown admin', adminEmail: map.get(row.admin_id)?.email || '' })) });
+    res.json({ entries: rows.map(row => ({ id: row._id, action: row.action, targetId: row.target_id, details: row.details || {}, createdAt: row.created_at, adminName: map.get(row.admin_id)?.name || (row.actor_role === 'user' ? 'Deleted user' : 'Unknown admin'), adminEmail: map.get(row.admin_id)?.email || '' })), pagination: paginationDto(page, pageSize, total) });
   } catch (error) { next(error); }
 });
 app.post('/api/admin/deposits/:id/approve', mutationLimiter, async (req, res, next) => {

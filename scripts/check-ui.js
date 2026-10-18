@@ -31,8 +31,8 @@ if (!js.includes("request('/api/admin/settings/deposits')") || !html.includes('i
   console.error('Admin deposit-address management UI or API binding is missing.');
   process.exit(1);
 }
-if (!js.includes('body:{ address, rate }') || !js.includes('renderRateDisplays') || !html.includes('id="sidebarRateValue"') || !html.includes('id="homeRateNote"') || !html.includes('id="profileRateValue"')) {
-  console.error('Admin-managed exchange rate is not wired to settings and user-facing rate labels.');
+if (!js.includes('body:{ address, rate }') || !js.includes('renderRateDisplays') || !html.includes('id="sidebarRateValue"') || !html.includes('id="homeRateNote"') || html.includes('id="profileRateValue"') || html.includes('Fixed exchange rate</div>') || html.includes('Local data storage</div>')) {
+  console.error('Admin-managed exchange rate must remain functional while rate/storage rows are removed from Profile & Settings.');
   process.exit(1);
 }
 const markerStarts = (html.match(/<!-- CKX_ADMIN_UI_START -->/g) || []).length;
@@ -79,7 +79,14 @@ const securityChecks = [
   [server.includes('fromUsdtMicro(usdtMicro) * await currentRate()') && server.includes('amountPaise / 100 / currentExchangeRate'), 'Deposit/payout conversions must use the current admin-managed rate.'],
   [server.includes("if (network !== 'TRC20') return apiError(res, 400, 'Only USDT on TRON (TRC20) is supported.')"), 'The backend must enforce TRC20-only deposit requests.'],
   [server.includes("const mongoClient = new MongoClient(MONGODB_URI") && server.includes("collectionName: 'sessions'"), 'MongoDB must be the database and session store.'],
-  [js.includes('const isAdminPath = () => /^\\/admin') && js.includes('requestedAdminPage'), 'Admin navigation deep-link handling is missing.']
+  [js.includes('const isAdminPath = () => /^\\/admin') && js.includes('requestedAdminPage'), 'Admin navigation deep-link handling is missing.'],
+  [server.includes("app.post('/api/account/delete'") && server.includes("confirmation !== 'DELETE'") && server.includes("bcrypt.compare(password, current.password_hash)") && server.includes('DELETE_BLOCKED_BALANCE') && server.includes('DELETE_BLOCKED_REQUESTS'), 'Safe account deletion must verify password/confirmation and block balances or open requests.'],
+  [server.includes('user_deleted: true') && server.includes("bank_cipher: ''") && server.includes("ledger').updateMany({ user_id: userId }"), 'Account deletion must pseudonymize retained financial records and remove encrypted bank details.'],
+  [server.includes("app.get('/api/support'") && server.includes("app.put('/api/admin/settings/support'") && server.includes('normalizeTelegramUsername') && server.includes('telegram_support_username_updated'), 'Configurable Telegram customer support is missing or lacks validation/audit logging.'],
+  [server.includes('parseListParams(req)') && server.includes('.skip((page - 1) * pageSize).limit(pageSize)') && server.includes('paginationDto(page, pageSize, total)'), 'Admin queues must use server-side pagination and validated page sizes.'],
+  [html.includes('href="/admin/deposits"') && html.includes('href="/admin/payouts"') && html.includes('href="/admin/users"') && html.includes('href="/admin/audit"') && html.includes('href="/admin/settings"') && js.includes('setAdminSubPage'), 'Separate administrator subpages and route handling are missing.'],
+  [js.includes('data-copy-value') && js.includes('navigator.clipboard?.writeText') && html.includes('id="adminDepositsRows"') && html.includes('id="adminPayoutRows"'), 'Admin copy buttons for transaction hashes and bank account numbers are missing.'],
+  [html.includes('id="deleteAccountForm"') && html.includes('id="supportTelegramLink"') && html.includes('id="supportSettingsForm"'), 'Account deletion and customer/admin support controls are missing.']
 ];
 for (const [ok, message] of securityChecks) {
   if (!ok) { console.error(message); process.exit(1); }

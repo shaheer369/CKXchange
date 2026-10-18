@@ -105,6 +105,27 @@ async function waitForStart(proc, origin) {
   const adminPage = await api(origin, '/admin', { cookie: admin.cookie });
   assert.equal(adminPage.response.status, 200, 'admin session should access /admin');
   assert.match(adminPage.text, /id="page-admin"/, 'admin shell should contain admin UI');
+  assert.equal((await api(origin, '/admin/deposits', { cookie: admin.cookie })).response.status, 200, 'admin subpages should work when opened directly');
+  assert.equal((await api(origin, '/admin/deposits', { cookie: customer.cookie })).response.status, 302, 'ordinary users must not open admin subpages directly');
+  const pagedUsers = await api(origin, '/api/admin/users?page=1&pageSize=999', { cookie: admin.cookie });
+  assert.equal(pagedUsers.response.status, 200);
+  assert.equal(pagedUsers.data.pagination.pageSize, 100, 'server must clamp excessive page sizes');
+  assert.ok(Array.isArray(pagedUsers.data.users), 'users endpoint should return a paginated array');
+  const pagedDeposits = await api(origin, '/api/admin/transactions?type=deposit&page=1&pageSize=999', { cookie: admin.cookie });
+  assert.equal(pagedDeposits.response.status, 200);
+  assert.equal(pagedDeposits.data.pagination.pageSize, 100, 'transaction queue must clamp excessive page sizes');
+  const pagedAudit = await api(origin, '/api/admin/audit?page=1&pageSize=999', { cookie: admin.cookie });
+  assert.equal(pagedAudit.response.status, 200);
+  assert.equal(pagedAudit.data.pagination.pageSize, 100, 'audit queue must clamp excessive page sizes');
+  const ordinarySupportEdit = await api(origin, '/api/admin/settings/support', { method: 'PUT', cookie: customer.cookie, csrf: customer.csrf, body: { telegramUsername: 'CKXchangeSupport' } });
+  assert.equal(ordinarySupportEdit.response.status, 403, 'ordinary users must not update admin support settings');
+  const badSupport = await api(origin, '/api/admin/settings/support', { method: 'PUT', cookie: admin.cookie, csrf: admin.csrf, body: { telegramUsername: 'https://t.me/evil' } });
+  assert.equal(badSupport.response.status, 400, 'Telegram support must reject URLs instead of usernames');
+  const goodSupport = await api(origin, '/api/admin/settings/support', { method: 'PUT', cookie: admin.cookie, csrf: admin.csrf, body: { telegramUsername: '@CKXchangeSupport' } });
+  assert.equal(goodSupport.response.status, 200, `valid Telegram support setting failed: ${JSON.stringify(goodSupport.data)}`);
+  assert.equal(goodSupport.data.telegramUsername, 'CKXchangeSupport', 'Telegram username should be normalized');
+  const publicSupport = await api(origin, '/api/support');
+  assert.deepEqual(publicSupport.data, { telegramUsername: 'CKXchangeSupport' }, 'public support API must expose only the public Telegram username');
 
   const badSettings = await api(origin, '/api/admin/settings/deposits', { method: 'PUT', cookie: admin.cookie, csrf: admin.csrf, body: { address: 'not-an-address', rate: 106 } });
   assert.equal(badSettings.response.status, 400, 'invalid TRC20 address must be rejected');
@@ -127,6 +148,9 @@ async function waitForStart(proc, origin) {
   assert.equal((await api(origin, `/api/admin/deposits/${deposit.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 409, 'deposit must not be credited twice');
   assert.equal((await api(origin, '/api/state', { cookie: customer.cookie })).data.user.availableUsdt, 5, 'deposit must credit wallet once');
   assert.equal((await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 5, network: 'TRC20', txHash: 'A'.repeat(64) } })).response.status, 409, 'hash duplicates must be case-insensitive');
+  const blockedDeletion = await api(origin, '/api/account/delete', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { password: 'SmokeCustomer12345', confirmation: 'DELETE' } });
+  assert.equal(blockedDeletion.response.status, 409, 'account deletion must be blocked while an available USDT balance remains');
+  assert.equal((await api(origin, '/api/auth/me', { cookie: customer.cookie })).response.status, 200, 'a blocked deletion must restore the customer account to active');
 
   // Seed one bank record directly into the disposable test database so no external IFSC request is required.
   mongoClient = new MongoClient(testUri);
@@ -152,13 +176,47 @@ async function waitForStart(proc, origin) {
   assert.equal(state.data.user.availableUsdt, 4);
   assert.equal(state.data.user.reservedUsdt, 0);
 
+  // Exercise account deletion against a disposable account with no balances or open requests.
+  const deletionCsrf = await api(origin, '/api/auth/csrf');
+  const deletionRegistration = await api(origin, '/api/auth/register', {
+    method: 'POST', cookie: deletionCsrf.cookie, csrf: deletionCsrf.data.csrfToken,
+    body: { name: 'DELETE TEST USER', email: 'delete-test@example.com', password: 'DeleteCustomer12345' }
+  });
+  assert.equal(deletionRegistration.response.status, 201, `deletion-test registration failed: ${JSON.stringify(deletionRegistration.data)}`);
+  const deletionUserId = deletionRegistration.data.user.id;
+  const deletionCookie = deletionRegistration.cookie;
+  const deletionToken = deletionRegistration.data.csrfToken;
+  const historicId = 'PAY-DELETE-SAMPLE';
+  await testDb.collection('banks').insertOne({ _id: 'BNK-DELETE-SAMPLE', user_id: deletionUserId, holder: 'DELETE TEST USER', account_cipher: 'encrypted-test-only', account_fingerprint: 'delete-fingerprint', account_last4: '4242', ifsc: 'TEST0123456', bank_name: 'Smoke Bank', branch_name: 'Smoke Branch', created_at: new Date().toISOString() });
+  await testDb.collection('transactions').insertOne({ _id: historicId, user_id: deletionUserId, type: 'payout', status: 'success', amount_paise: 11000, usdt_micro: 1000000, bank_id: 'BNK-DELETE-SAMPLE', bank_cipher: 'encrypted-test-only', bank_holder: 'DELETE TEST USER', bank_last4: '4242', bank_name: 'Smoke Bank', branch_name: 'Smoke Branch', ifsc: 'TEST0123456', created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  await testDb.collection('ledger').insertOne({ _id: `${historicId}:payout_paid`, user_id: deletionUserId, transaction_id: historicId, entry_type: 'payout_paid', available_delta_micro: 0, reserved_delta_micro: -1000000, created_at: new Date().toISOString() });
+  const wrongDeletePassword = await api(origin, '/api/account/delete', { method: 'POST', cookie: deletionCookie, csrf: deletionToken, body: { password: 'IncorrectPassword123', confirmation: 'DELETE' } });
+  assert.equal(wrongDeletePassword.response.status, 403, 'account deletion must verify the current password');
+  assert.ok(await testDb.collection('users').findOne({ _id: deletionUserId, status: 'active' }), 'wrong password must not lock or delete the account');
+  const wrongDeleteConfirmation = await api(origin, '/api/account/delete', { method: 'POST', cookie: deletionCookie, csrf: deletionToken, body: { password: 'DeleteCustomer12345', confirmation: 'delete' } });
+  assert.equal(wrongDeleteConfirmation.response.status, 400, 'account deletion must require the exact confirmation word');
+  const deletionResult = await api(origin, '/api/account/delete', { method: 'POST', cookie: deletionCookie, csrf: deletionToken, body: { password: 'DeleteCustomer12345', confirmation: 'DELETE' } });
+  assert.equal(deletionResult.response.status, 200, `account deletion failed: ${JSON.stringify(deletionResult.data)}`);
+  assert.equal((await api(origin, '/api/auth/me', { cookie: deletionCookie })).response.status, 401, 'deleted customer sessions must no longer authenticate');
+  assert.equal(await testDb.collection('users').findOne({ _id: deletionUserId }), null, 'deleted account profile must be removed');
+  assert.equal(await testDb.collection('banks').countDocuments({ user_id: deletionUserId }), 0, 'saved bank records must be deleted');
+  const preservedTransaction = await testDb.collection('transactions').findOne({ _id: historicId });
+  assert.ok(preservedTransaction, 'financial transaction history must be preserved for reconciliation');
+  assert.equal(preservedTransaction.user_deleted, true);
+  assert.match(preservedTransaction.user_id, /^DELETED-/);
+  for (const field of ['bank_id','bank_cipher','bank_holder','bank_last4','bank_name','branch_name','ifsc']) assert.equal(Object.hasOwn(preservedTransaction, field), false, `retained transaction must not contain ${field}`);
+  const preservedLedger = await testDb.collection('ledger').findOne({ transaction_id: historicId });
+  assert.equal(preservedLedger.user_deleted, true, 'ledger should retain its entry but pseudonymize the deleted customer reference');
+  assert.equal(preservedLedger.user_id, preservedTransaction.user_id);
+  assert.ok(await testDb.collection('audit_log').findOne({ action: 'user_account_deleted', target_id: preservedTransaction.user_id }), 'account deletion should create a pseudonymous audit entry');
+
   const newAdminPassword = 'SmokeTestAdminPasswordChanged2026!';
   const adminReset = spawnSync(node, ['scripts/create-admin.js', '--email', 'smoke-admin@example.com', '--name', 'SMOKE ADMIN'], { cwd: root, env: { ...env, ADMIN_PASSWORD: newAdminPassword }, encoding: 'utf8' });
   assert.equal(adminReset.status, 0, `admin reset failed: ${adminReset.stderr || adminReset.stdout}`);
   assert.equal((await api(origin, '/api/admin/overview', admin)).response.status, 401, 'admin reset must revoke previous admin sessions');
   admin = await login(origin, 'smoke-admin@example.com', newAdminPassword);
   assert.equal(admin.user.role, 'admin');
-  console.log('CKXchange MongoDB integration tests passed: role isolation, sessions, rate/address settings, TRC20-only deposits, duplicate hashes, one-time credit, payout reservation/completion/rejection.');
+  console.log('CKXchange MongoDB integration tests passed: role isolation, admin subpages, pagination, support settings, account deletion, session invalidation, rate/address settings, TRC20-only deposits, duplicate hashes, one-time credit, payout reservation/completion/rejection.');
 })().catch(error => {
   console.error('CKXchange MongoDB integration test failed:', error.stack || error);
   if (serverOutput) console.error('Server output:\n' + serverOutput);

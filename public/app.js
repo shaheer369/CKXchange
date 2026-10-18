@@ -2,7 +2,7 @@
   'use strict';
   const RATE_DEFAULT = 106;
   const $ = id => document.getElementById(id);
-  const state = { user: null, balance: 0, reservedUsdt: 0, rate: RATE_DEFAULT, banks: [], transactions: [] };
+  const state = { user: null, balance: 0, reservedUsdt: 0, rate: RATE_DEFAULT, banks: [], transactions: [], supportUsername: '' };
   let csrfToken = '';
   let authMode = 'login';
   let currentReceipt = null;
@@ -13,8 +13,27 @@
   let depositAddressRequestVersion = 0;
   let adminLoading = false;
   let adminDepositSettingsLoaded = false;
+  let adminSupportSettingsLoaded = false;
+  let activeAdminSubPage = 'overview';
+  const adminLists = {
+    deposits: { page: 1, pageSize: 25, q: '' },
+    payouts: { page: 1, pageSize: 25, q: '' },
+    users: { page: 1, pageSize: 25, q: '' },
+    audit: { page: 1, pageSize: 25, q: '' }
+  };
   let pollHandle = null;
+  const ADMIN_SUBPAGES = ['overview', 'deposits', 'payouts', 'users', 'audit', 'settings'];
+  const ADMIN_META = {
+    overview: ['ADMINISTRATION', 'Admin overview', 'Pending workload and high-level account activity.'],
+    deposits: ['ADMINISTRATION', 'Deposit requests', 'Review pending USDT deposits and verify matching on-chain transactions.'],
+    payouts: ['ADMINISTRATION', 'Payout requests', 'Process INR payout requests and reconcile completed transfers.'],
+    users: ['ADMINISTRATION', 'Users', 'Search customer accounts and review account status and balances.'],
+    audit: ['ADMINISTRATION', 'Audit log', 'Review administrator actions and account deletion records.'],
+    settings: ['ADMINISTRATION', 'Admin settings', 'Configure the TRC20 receiving address, reference rate, and Telegram support.']
+  };
   const isAdminPath = () => /^\/admin(?:\/|$)/i.test(location.pathname);
+  const adminSubPageFromPath = () => { const segment = location.pathname.split('/').filter(Boolean)[1] || 'overview'; return ADMIN_SUBPAGES.includes(segment) ? segment : 'overview'; };
+  const adminPathFor = route => route === 'overview' ? '/admin' : `/admin/${route}`;
   const requestedAdminPage = () => isAdminPath() || new URLSearchParams(location.search).get('next') === 'admin';
 
   const PAGE_META = {
@@ -89,6 +108,7 @@
     const mobile = document.querySelector('.mobile-bottom'); if (mobile) mobile.classList.toggle('admin-view', admin);
     $('profileMemberName').textContent = state.user?.name || 'CKXchange member';
     $('profileMemberEmail').textContent = state.user?.email || '';
+    const deletePanel = $('deleteAccountPanel'); if (deletePanel) deletePanel.hidden = admin;
     const miniName = document.querySelector('.mini-name'); if (miniName) miniName.textContent = state.user?.name || 'CKXchange member';
     const miniRole = document.querySelector('.mini-role'); if (miniRole) miniRole.textContent = admin ? 'Administrator' : 'Member';
     const initialAvatar = document.querySelector('#page-profile .avatar'); if (initialAvatar) initialAvatar.textContent = (state.user?.name || 'CX').split(/\s+/).slice(0,2).map(x => x[0] || '').join('').slice(0,2);
@@ -128,6 +148,22 @@
       }
     }, 10000);
   }
+  function renderSupportContact(username) {
+    const clean = String(username || '').replace(/^@/, '');
+    const valid = /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(clean);
+    state.supportUsername = valid ? clean : '';
+    const link = $('supportTelegramLink');
+    const label = $('supportUsernameValue');
+    const fallback = $('supportNotConfigured');
+    if (link) { link.hidden = !valid; link.href = valid ? `https://t.me/${clean}` : '#'; }
+    if (label) { label.hidden = !valid; label.textContent = valid ? `@${clean}` : ''; }
+    if (fallback) { fallback.hidden = valid; fallback.textContent = valid ? '' : 'Customer support is not configured yet.'; }
+  }
+  async function loadSupportContact() {
+    try { const result = await request('/api/support'); renderSupportContact(result.telegramUsername || ''); }
+    catch (_) { renderSupportContact(''); }
+  }
+
   async function initialize() {
     try {
       await refreshCsrf();
@@ -135,10 +171,11 @@
       state.user = auth.user;
       showApplication();
       await refreshState({ quiet:true });
+      await loadSupportContact();
       const wantsAdmin = requestedAdminPage();
       const desired = wantsAdmin && state.user.role === 'admin' ? 'admin' : 'home';
       go(desired, false);
-      if (desired === 'admin') history.replaceState({}, '', '/admin');
+      if (desired === 'admin' && !isAdminPath()) history.replaceState({ adminSubPage: 'overview' }, '', '/admin');
       else if (wantsAdmin) { history.replaceState({}, '', '/'); toast('Admin access is restricted to administrator accounts.', 'error'); }
       startPolling();
     } catch (error) {
@@ -159,6 +196,23 @@
     if (currentReceipt) { const latest = state.transactions.find(t => t.id === currentReceipt.id); if (latest && latest.status !== currentReceipt.status) { currentReceipt = latest; renderReceiptDetails(latest); } }
     return response;
   }
+  function setAdminSubPage(route, { historyMode = 'none', load = true } = {}) {
+    const subpage = ADMIN_SUBPAGES.includes(route) ? route : 'overview';
+    activeAdminSubPage = subpage;
+    document.querySelectorAll('[data-admin-subpage]').forEach(section => { section.hidden = section.dataset.adminSubpage !== subpage; });
+    document.querySelectorAll('[data-admin-route]').forEach(link => link.classList.toggle('active', link.dataset.adminRoute === subpage));
+    const meta = ADMIN_META[subpage];
+    $('pageEyebrow').textContent = meta[0]; $('pageTitle').textContent = meta[1]; $('pageSubtitle').textContent = meta[2];
+    if (historyMode === 'push') history.pushState({ adminSubPage: subpage }, '', adminPathFor(subpage));
+    else if (historyMode === 'replace') history.replaceState({ adminSubPage: subpage }, '', adminPathFor(subpage));
+    if (load) loadAdmin().catch(error => {
+      if (error.status === 401 || error.status === 403) {
+        if ($('page-admin')) { window.location.replace('/'); return; }
+        if (error.status === 401) { state.user = null; history.replaceState({}, '', '/'); showAuth(); setAuthMode('login'); }
+        else toast('Administrator access is required.', 'error');
+      } else toast(error.message, 'error');
+    });
+  }
   function go(page, push = true) {
     if (page === 'bankreturn') page = addBankReturnPage;
     if (!PAGE_META[page]) return;
@@ -167,20 +221,18 @@
     if (page === 'addbank' && (currentPage === 'send' || currentPage === 'banks')) addBankReturnPage = currentPage;
     document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === `page-${page}`));
     document.querySelectorAll('[data-page]').forEach(el => el.classList.toggle('active', el.dataset.page === page));
-    const [eyebrow, title, subtitle] = PAGE_META[page];
-    $('pageEyebrow').textContent = eyebrow; $('pageTitle').textContent = title; $('pageSubtitle').textContent = subtitle;
-    if (page === 'send') refreshSendPage();
-    if (page === 'banks') renderBanks();
-    if (page === 'addbank') $('addBankSavedCount').textContent = `${state.banks.length} saved account${state.banks.length === 1 ? '' : 's'}`;
-    if (page === 'recharge') { updateDepositEstimate(); updateDepositAddress(); }
-    if (page === 'admin') loadAdmin().catch(error => {
-      if (error.status === 401 || error.status === 403) {
-        if ($('page-admin')) { window.location.replace('/'); return; }
-        if (error.status === 401) { state.user = null; history.replaceState({}, '', '/'); showAuth(); setAuthMode('login'); }
-        else toast('Administrator access is required.', 'error');
-      } else toast(error.message, 'error');
-    });
-    if (push) history.replaceState({}, '', page === 'admin' ? '/admin' : '/');
+    if (page === 'admin') {
+      const route = isAdminPath() ? adminSubPageFromPath() : 'overview';
+      setAdminSubPage(route, { historyMode: push ? 'replace' : 'none' });
+    } else {
+      const [eyebrow, title, subtitle] = PAGE_META[page];
+      $('pageEyebrow').textContent = eyebrow; $('pageTitle').textContent = title; $('pageSubtitle').textContent = subtitle;
+      if (page === 'send') refreshSendPage();
+      if (page === 'banks') renderBanks();
+      if (page === 'addbank') $('addBankSavedCount').textContent = `${state.banks.length} saved account${state.banks.length === 1 ? '' : 's'}`;
+      if (page === 'recharge') { updateDepositEstimate(); updateDepositAddress(); }
+      if (push) history.replaceState({}, '', '/');
+    }
     window.scrollTo({ top:0, behavior:'smooth' });
   }
   function bankSymbol(bank) {
@@ -207,7 +259,6 @@
     const formatted = money(state.rate);
     if ($('sidebarRateValue')) $('sidebarRateValue').textContent = formatted;
     if ($('homeRateNote')) $('homeRateNote').textContent = `1 USDT = ${formatted} · configured estimate`;
-    if ($('profileRateValue')) $('profileRateValue').textContent = `${formatted} / USDT`;
   }
   function renderTransactions() {
     renderRateDisplays();
@@ -219,7 +270,8 @@
     $('profileTotal').textContent = money(total).replace(/\.00$/, ''); $('profileBanks').textContent = state.banks.length.toLocaleString('en-IN');
     $('profileBalance').textContent = fmtNumber(state.balance, 4); $('homeUsdt').textContent = fmtNumber(state.balance, 4);
     $('homeInr').textContent = money(state.balance * state.rate); $('rechargeCurrent').textContent = fmtNumber(state.balance,4);
-    $('pageSubtitle').textContent = PAGE_META[document.querySelector('.page.active')?.id.replace('page-','') || 'home']?.[2] || '';
+    const activePage = document.querySelector('.page.active')?.id.replace('page-','') || 'home';
+    $('pageSubtitle').textContent = (activePage === 'admin' ? ADMIN_META[activeAdminSubPage] : PAGE_META[activePage])?.[2] || '';
     const recent = [...state.transactions].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0,4);
     $('recentActivity').innerHTML = recent.length ? recent.map(t => {
       const isPayout = t.type === 'payout'; const title = isPayout ? 'INR payout' : 'USDT deposit request';
@@ -362,27 +414,87 @@
     if (rateHint && result?.rateSource) rateHint.textContent = `Current rate: ${money(state.rate)} per USDT · source: ${result.rateSource}. Applies to future requests only; not a live market quote.`;
   }
 
-  async function loadAdmin({ refreshDepositSettings = false } = {}) {
-    if(adminLoading || state.user?.role!=='admin') return; adminLoading=true;
+  function updateAdminPagination(kind, pagination) {
+    const info = $(`admin${kind[0].toUpperCase()+kind.slice(1)}PageInfo`);
+    const previous = document.querySelector(`[data-admin-page-prev="${kind}"]`);
+    const next = document.querySelector(`[data-admin-page-next="${kind}"]`);
+    const data = pagination || { page: adminLists[kind].page, pageSize: 25, total: 0, pages: 1 };
+    adminLists[kind].page = data.page || 1;
+    if (info) info.textContent = `Page ${data.page || 1} of ${data.pages || 1} · ${(data.total || 0).toLocaleString('en-IN')} record${data.total === 1 ? '' : 's'}`;
+    if (previous) previous.disabled = (data.page || 1) <= 1;
+    if (next) next.disabled = (data.page || 1) >= (data.pages || 1);
+  }
+  function copyAdminValue(value, button) {
+    const raw = String(value ?? '');
+    if (!raw) { toast('Nothing to copy.','error'); return; }
+    const setCopied = () => { const original = button.textContent; button.textContent = 'Copied'; setTimeout(() => { if (button.isConnected) button.textContent = original; }, 1400); };
+    const fallback = () => {
+      const area = document.createElement('textarea'); area.value = raw; area.setAttribute('readonly',''); area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select();
+      let copied = false; try { copied = document.execCommand('copy'); } catch (_) { copied = false; }
+      area.remove();
+      if (copied) { setCopied(); toast('Copied to clipboard.'); }
+      else toast('Clipboard access is unavailable. Select and copy the value manually.','error');
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(raw).then(() => { setCopied(); toast('Copied to clipboard.'); }).catch(fallback);
+    else fallback();
+  }
+  async function loadAdmin({ refreshDepositSettings = false, refreshSupportSettings = false } = {}) {
+    if (adminLoading || state.user?.role !== 'admin') return;
+    adminLoading = true;
     try {
-      const [overview,deposits,payouts,users,audit]=await Promise.all([
-        request('/api/admin/overview'), request('/api/admin/transactions?type=deposit'), request('/api/admin/transactions?type=payout'), request('/api/admin/users'), request('/api/admin/audit')
-      ]);
-      $('adminUsersCount').textContent=overview.users.toLocaleString('en-IN'); $('adminDepositsCount').textContent=overview.pendingDeposits.toLocaleString('en-IN'); $('adminPayoutsCount').textContent=overview.pendingPayouts.toLocaleString('en-IN');
-      $('adminDepositsRows').innerHTML=deposits.transactions.map(t=>`<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div></td><td><div class="table-main">${safe(t.network)}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="admin-hash">${safe(t.txHash)}</div></td><td><div class="table-main">${fmtNumber(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}">Verify & credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
-      $('adminDepositsEmpty').hidden=deposits.transactions.length!==0;
-      $('adminPayoutRows').innerHTML=payouts.transactions.map(t=>`<tr><td><div class="table-main">${safe(t.userName)} · ${safe(t.holder||'')}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="admin-user-muted">${safe(t.bank||'')} · ${safe(t.branch||'')}</div><div class="admin-user-muted">A/C ${safe(t.account||masked(t.last4))} · ${safe(t.ifsc||'')}</div></td><td><div class="table-main">${money(t.amount)}</div><div class="table-sub">${fmtNumber(t.usdt,6)} USDT reserved</div></td><td>${statusBadge(t.status)}${t.bankReference?`<div class="table-sub">Ref: ${safe(t.bankReference)}</div>`:''}</td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions">${t.status==='pending'?`<button class="primary-btn" data-admin-action="payout-approve" data-id="${safe(t.id)}">Approve</button>`:''}${t.status==='processing'?`<button class="primary-btn" data-admin-action="payout-complete" data-id="${safe(t.id)}">Mark successful</button><button class="secondary-btn" data-admin-action="payout-fail" data-id="${safe(t.id)}">Mark failed</button>`:''}<button class="danger-btn" data-admin-action="payout-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
-      $('adminPayoutsEmpty').hidden=payouts.transactions.length!==0;
-      $('adminUsersRows').innerHTML=users.users.map(u=>`<tr><td><div class="table-main">${safe(u.name)}</div><div class="table-sub">${safe(u.id)}</div></td><td>${safe(u.email)}</td><td>${safe(u.role)}</td><td>${fmtNumber(u.availableUsdt,4)}<div class="table-sub">Reserved ${fmtNumber(u.reservedUsdt,4)}</div></td><td>${safe(u.status)}</td></tr>`).join('');
-      $('adminAuditRows').innerHTML=audit.entries.length?audit.entries.map(entry=>`<div class="settings-row"><div class="settings-icon">✓</div><div class="settings-content"><div class="settings-name">${safe(entry.action)}</div><div class="settings-desc">${safe(entry.adminName)} · ${safe(dateText(entry.createdAt))} · Target ${safe(entry.targetId||'—')}</div><div class="settings-desc">${safe(JSON.stringify(entry.details))}</div></div></div>`).join(''):`<div class="empty-state"><div class="empty-title">No admin actions recorded yet</div></div>`;
-      if (!adminDepositSettingsLoaded || refreshDepositSettings) {
-        const settings = await request('/api/admin/settings/deposits');
-        renderAdminDepositSettings(settings); adminDepositSettingsLoaded = true;
+      const overview = await request('/api/admin/overview');
+      $('adminUsersCount').textContent = Number(overview.users || 0).toLocaleString('en-IN');
+      $('adminDepositsCount').textContent = Number(overview.pendingDeposits || 0).toLocaleString('en-IN');
+      $('adminPayoutsCount').textContent = Number(overview.pendingPayouts || 0).toLocaleString('en-IN');
+      $('adminSuccessfulPayoutInr').textContent = money(overview.successfulPayoutInr || 0);
+      $('adminTotalAvailableUsdt').textContent = `${fmtNumber(overview.totalAvailableUsdt || 0,4)} USDT`;
+      $('adminDepositsBadge').textContent = Number(overview.pendingDeposits || 0) > 99 ? '99+' : String(overview.pendingDeposits || 0);
+      $('adminPayoutsBadge').textContent = Number(overview.pendingPayouts || 0) > 99 ? '99+' : String(overview.pendingPayouts || 0);
+
+      if (activeAdminSubPage === 'deposits' || activeAdminSubPage === 'payouts') {
+        const kind = activeAdminSubPage;
+        const list = adminLists[kind];
+        const data = await request(`/api/admin/transactions?type=${kind === 'deposits' ? 'deposit' : 'payout'}&page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
+        if (kind === 'deposits') {
+          $('adminDepositsRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${safe(t.network || 'TRC20')}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="copy-inline"><code class="admin-hash">${safe(t.txHash)}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(t.txHash)}" aria-label="Copy transaction hash for ${safe(t.id)}">Copy hash</button></div></td><td><div class="table-main">${fmtNumber(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
+          $('adminDepositsEmpty').hidden = (data.transactions || []).length !== 0;
+        } else {
+          $('adminPayoutRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)} · ${safe(t.holder||'')}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="admin-user-muted">${safe(t.bank||'')} · ${safe(t.branch||'')}</div><div class="copy-inline"><div class="admin-user-muted">A/C ${safe(t.account||masked(t.last4))} · ${safe(t.ifsc||'')}</div>${t.account ? `<button class="admin-copy-btn" type="button" data-copy-value="${safe(t.account)}" aria-label="Copy payout account number for ${safe(t.id)}">Copy account no.</button>` : ''}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${money(t.amount)}</div><div class="table-sub">${fmtNumber(t.usdt,6)} USDT reserved</div></td><td>${statusBadge(t.status)}${t.bankReference?`<div class="table-sub">Ref: ${safe(t.bankReference)}</div>`:''}</td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions">${t.status==='pending'?`<button class="primary-btn" data-admin-action="payout-approve" data-id="${safe(t.id)}">Approve</button>`:''}${t.status==='processing'?`<button class="primary-btn" data-admin-action="payout-complete" data-id="${safe(t.id)}">Mark successful</button><button class="secondary-btn" data-admin-action="payout-fail" data-id="${safe(t.id)}">Mark failed</button>`:''}<button class="danger-btn" data-admin-action="payout-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
+          $('adminPayoutsEmpty').hidden = (data.transactions || []).length !== 0;
+        }
+        updateAdminPagination(kind, data.pagination);
+      } else if (activeAdminSubPage === 'users') {
+        const list = adminLists.users;
+        const data = await request(`/api/admin/users?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
+        $('adminUsersRows').innerHTML = (data.users || []).map(u=>`<tr><td><div class="table-main">${safe(u.name)}</div><div class="table-sub">${safe(u.id)}</div></td><td>${safe(u.email)}</td><td>${safe(u.role)}</td><td>${fmtNumber(u.availableUsdt,4)}<div class="table-sub">Reserved ${fmtNumber(u.reservedUsdt,4)}</div></td><td>${safe(u.status)}</td></tr>`).join('');
+        $('adminUsersEmpty').hidden = (data.users || []).length !== 0;
+        updateAdminPagination('users', data.pagination);
+      } else if (activeAdminSubPage === 'audit') {
+        const list = adminLists.audit;
+        const data = await request(`/api/admin/audit?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
+        $('adminAuditRows').innerHTML = (data.entries || []).length ? data.entries.map(entry=>`<div class="settings-row"><div class="settings-icon">✓</div><div class="settings-content"><div class="settings-name">${safe(entry.action)}</div><div class="settings-desc">${safe(entry.adminName)}${entry.adminEmail ? ` · ${safe(entry.adminEmail)}` : ''} · ${safe(dateText(entry.createdAt))} · Target ${safe(entry.targetId||'—')}</div><div class="settings-desc">${safe(JSON.stringify(entry.details))}</div></div></div>`).join('') : '';
+        $('adminAuditEmpty').hidden = (data.entries || []).length !== 0;
+        updateAdminPagination('audit', data.pagination);
+      } else if (activeAdminSubPage === 'settings') {
+        if (!adminDepositSettingsLoaded || refreshDepositSettings) {
+          const settings = await request('/api/admin/settings/deposits');
+          renderAdminDepositSettings(settings); adminDepositSettingsLoaded = true;
+        }
+        if (!adminSupportSettingsLoaded || refreshSupportSettings) {
+          const support = await request('/api/admin/settings/support');
+          $('supportTelegramUsername').value = support.telegramUsername || '';
+          adminSupportSettingsLoaded = true;
+        }
       }
-    } finally { adminLoading=false; }
+    } finally { adminLoading = false; }
   }
   async function adminAction(button) {
-    const action=button.dataset.adminAction, id=button.dataset.id; if(!action||!id) return;
+    const action=button.dataset.adminAction, id=button.dataset.id; if(!action||!id||button.disabled) return;
+    const originalText = button.textContent;
+    const row = button.closest('tr');
+    const rowButtons = row ? [...row.querySelectorAll('[data-admin-action]')] : [button];
+    rowButtons.forEach(item => { item.disabled = true; });
+    button.textContent = 'Working…';
     try {
       if(action==='deposit-approve') {
         if(!confirm('Confirm you independently verified this network transaction, token contract, receiving address, amount, and required confirmations. Approving will credit the USDT balance.')) return;
@@ -411,6 +523,8 @@
         }
       }
       toast(error.message,'error');
+    } finally {
+      if (button.isConnected) { button.textContent = originalText; rowButtons.forEach(item => { if (item.isConnected) item.disabled = false; }); }
     }
   }
 
@@ -426,10 +540,57 @@
     const slipButton=event.target.closest('[data-view-transaction]');
     if(slipButton){const txn=state.transactions.find(item=>item.id===slipButton.dataset.viewTransaction); if(txn&&txn.type==='payout') openReceipt(txn); return;}
     const adminButton=event.target.closest('[data-admin-action]'); if(adminButton){await adminAction(adminButton);return;}
-    if(event.target.closest('[data-admin-refresh]')){try{await refreshState({quiet:true});await loadAdmin({refreshDepositSettings:true});toast('Admin data refreshed.');}catch(error){toast(error.message,'error');}return;}
+    const adminCopy=event.target.closest('[data-copy-value]'); if(adminCopy){copyAdminValue(adminCopy.dataset.copyValue,adminCopy);return;}
+    const previousPage=event.target.closest('[data-admin-page-prev]'); if(previousPage){const kind=previousPage.dataset.adminPagePrev; if(adminLists[kind]&&adminLists[kind].page>1){adminLists[kind].page-=1;await loadAdmin().catch(error=>toast(error.message,'error'));}return;}
+    const nextPage=event.target.closest('[data-admin-page-next]'); if(nextPage){const kind=nextPage.dataset.adminPageNext; if(adminLists[kind]){adminLists[kind].page+=1;await loadAdmin().catch(error=>toast(error.message,'error'));}return;}
+    const adminRoute=event.target.closest('[data-admin-route]'); if(adminRoute){event.preventDefault(); if(state.user?.role!=='admin'){toast('Administrator access is required.','error');return;} setAdminSubPage(adminRoute.dataset.adminRoute,{historyMode:'push'}); return;}
+    if(event.target.closest('[data-admin-refresh]')){try{await refreshState({quiet:true});await loadAdmin({refreshDepositSettings:true,refreshSupportSettings:true});toast('Admin data refreshed.');}catch(error){toast(error.message,'error');}return;}
     const copy=event.target.closest('#copyDepositAddress'); if(copy&&!copy.disabled){try{await navigator.clipboard.writeText(networkConfig.depositAddress);toast('Receiving address copied.');}catch(_){toast('Copy was unavailable; select and copy the address manually.','error');}return;}
     const nav=event.target.closest('[data-page]'); if(nav){go(nav.dataset.page);return;}
     const goButton=event.target.closest('[data-go]'); if(goButton){go(goButton.dataset.go);return;}
+  });
+
+  const adminSearchForms = [
+    ['deposits','adminDepositsSearchForm','adminDepositsSearch'],
+    ['payouts','adminPayoutsSearchForm','adminPayoutsSearch'],
+    ['users','adminUsersSearchForm','adminUsersSearch'],
+    ['audit','adminAuditSearchForm','adminAuditSearch']
+  ];
+  adminSearchForms.forEach(([kind,formId,inputId]) => {
+    const form = $(formId); if (!form) return;
+    form.addEventListener('submit', event => {
+      event.preventDefault(); adminLists[kind].q = $(inputId).value.trim().slice(0,80); adminLists[kind].page = 1;
+      if (activeAdminSubPage !== kind) setAdminSubPage(kind, { historyMode: 'push' }); else loadAdmin().catch(error => toast(error.message,'error'));
+    });
+  });
+
+  if ($('supportSettingsForm')) $('supportSettingsForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (state.user?.role !== 'admin') { toast('Administrator access is required.','error'); return; }
+    const button = $('saveSupportSettingsBtn'); button.disabled = true;
+    try {
+      const result = await request('/api/admin/settings/support', { method:'PUT', body:{ telegramUsername: $('supportTelegramUsername').value.trim() } });
+      $('supportTelegramUsername').value = result.telegramUsername || '';
+      adminSupportSettingsLoaded = true; renderSupportContact(result.telegramUsername || '');
+      toast(result.message || 'Support contact saved.');
+    } catch (error) { toast(error.message,'error'); }
+    finally { button.disabled = false; }
+  });
+
+  if ($('deleteAccountForm')) $('deleteAccountForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const password = $('deleteAccountPassword').value;
+    const confirmation = $('deleteAccountConfirmation').value.trim();
+    if (state.user?.role !== 'user') { toast('Administrator accounts cannot be deleted from this page.','error'); return; }
+    if (confirmation !== 'DELETE') { toast('Type DELETE exactly to confirm.','error'); return; }
+    if (!confirm('Permanently delete your CKXchange account? This cannot be undone. Requests that are still pending or processing, or any remaining balance, will block deletion.')) return;
+    const button = $('deleteAccountSubmit'); button.disabled = true;
+    try {
+      const result = await request('/api/account/delete', { method:'POST', body:{ password, confirmation } });
+      window.alert(result.message || 'Your account has been deleted.');
+      state.user = null; state.banks = []; state.transactions = []; state.balance = 0; state.reservedUsdt = 0; csrfToken = '';
+      window.location.replace('/');
+    } catch (error) { toast(error.message,'error'); button.disabled = false; }
   });
 
   $('authForm').addEventListener('submit', async event => {
@@ -446,12 +607,12 @@
       csrfToken=result.csrfToken||csrfToken; state.user=result.user;
       // Customer HTML omits admin-only markup. Reload through the server-guarded route after admin sign-in.
       if(state.user.role === 'admin' && !isAdminPath()) { window.location.replace('/admin'); return; }
-      showApplication(); await refreshState({quiet:true});
+      showApplication(); await refreshState({quiet:true}); await loadSupportContact();
       const wantsAdmin = requestedAdminPage();
       const initialPage = wantsAdmin && state.user.role === 'admin' ? 'admin' : 'home';
       if(wantsAdmin && state.user.role !== 'admin'){history.replaceState({},'','/');toast('Admin access is restricted to administrator accounts.','error');}
       go(initialPage,false);
-      if(initialPage === 'admin') history.replaceState({},'','/admin');
+      if(initialPage === 'admin' && !isAdminPath()) history.replaceState({ adminSubPage: 'overview' },'','/admin');
       $('authForm').reset(); toast(authMode==='register'?'Account created successfully.':'Signed in successfully.');
       startPolling();
     } catch(error) { $('authAlert').textContent=error.message; $('authAlert').style.color='var(--red)'; }
@@ -532,7 +693,7 @@
       else { history.replaceState({}, '', '/'); go('home',false); toast('Administrator access is restricted to administrator accounts.','error'); }
     } else go('home',false);
   });
-  // No browser-local wallet state is used. Periodic refresh makes admin status changes visible to the user.
+  // Customer support username is public configuration; wallet and account data remain server-side.
   setAuthMode('login');
   updateDepositEstimate();
   initialize();
