@@ -201,6 +201,7 @@ app.use('/api/admin', requireAuth, requireAdmin);
 
 function userDto(user) {
   return { id: user._id || user.id, name: user.name, email: user.email, role: user.role, status: user.status,
+    telegramId: user.telegram_id || '', phoneNumber: user.phone_number || '',
     availableUsdt: fromUsdtMicro(user.available_usdt_micro || 0), reservedUsdt: fromUsdtMicro(user.reserved_usdt_micro || 0), createdAt: user.created_at };
 }
 function accountMasked(last4) { return `•••• ${last4}`; }
@@ -231,6 +232,7 @@ async function getUserState(userId) {
 }
 function auditSafeUser(user) {
   return { id: user._id || user.id, name: user.name, email: user.email, role: user.role, status: user.status,
+    telegramId: user.telegram_id || '', phoneNumber: user.phone_number || '',
     availableUsdt: fromUsdtMicro(user.available_usdt_micro), reservedUsdt: fromUsdtMicro(user.reserved_usdt_micro), createdAt: user.created_at };
 }
 function regenerateSession(req) { return new Promise((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve())); }
@@ -284,6 +286,21 @@ function normalizeTelegramUsername(value) {
   if (!/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username)) throw new Error('TELEGRAM_USERNAME_INVALID');
   return username;
 }
+function normalizeUserTelegramId(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^\d{5,20}$/.test(raw)) return raw;
+  const username = raw.replace(/^@/, '');
+  if (!/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username)) throw new Error('USER_TELEGRAM_INVALID');
+  return `@${username}`;
+}
+function normalizePhoneNumber(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const phone = raw.replace(/[\s().-]/g, '');
+  if (!/^\+?[1-9]\d{7,14}$/.test(phone)) throw new Error('PHONE_NUMBER_INVALID');
+  return phone;
+}
 async function currentTelegramSupportUsername(session = null) {
   const options = session ? { session, projection: { setting_value: 1 } } : { projection: { setting_value: 1 } };
   const row = await db.collection('app_settings').findOne({ _id: 'telegram_support_username' }, options);
@@ -321,23 +338,36 @@ async function queueNotification(session, recipient, eventKey, kind, title, body
     kind, title, body, route, read_at: null, created_at: created
   } }, { upsert: true, session });
   await db.collection('push_outbox').updateOne({ _id: key }, { $setOnInsert: {
-    _id: key, recipient_id: recipient._id, event_key: eventKey, title, body, route,
+    _id: key, recipient_id: recipient._id, recipient_role: recipient.role, event_key: eventKey, title, body, route,
     state: 'pending', attempts: 0, created_at: created, updated_at: created
   } }, { upsert: true, session });
   return key;
 }
+function notificationInr(amountPaise) {
+  return fromPaise(amountPaise).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function notificationUsdt(amountMicro) {
+  return fromUsdtMicro(amountMicro).toLocaleString('en-US', { maximumFractionDigits: 6 });
+}
+function abbreviatedHash(hash) {
+  const value = String(hash || '');
+  return value.length > 22 ? `${value.slice(0, 10)}…${value.slice(-8)}` : value;
+}
 async function queueDepositAdminNotifications(session, transaction) {
   const admins = await db.collection('users').find({ role: 'admin', status: 'active' }, { session, projection: { _id: 1, role: 1 } }).toArray();
   const ids = [];
+  const body = `New USDT deposit request: ${notificationUsdt(transaction.usdt_micro)} USDT (≈ ₹${notificationInr(transaction.amount_paise)}). Hash ${abbreviatedHash(transaction.tx_hash)} needs review.`;
   for (const admin of admins) {
-    ids.push(await queueNotification(session, admin, `deposit-request:${transaction._id}`, 'deposit_request', 'USDT deposit request', 'A new USDT deposit request needs admin review.', '/admin/deposits'));
+    ids.push(await queueNotification(session, admin, `deposit-request:${transaction._id}`, 'deposit_request', 'USDT deposit request', body, '/admin/deposits'));
   }
   return ids;
 }
 async function queuePayoutSuccessNotification(session, transaction) {
-  const owner = await db.collection('users').findOne({ _id: transaction.user_id, role: 'user', status: 'active' }, { session, projection: { _id: 1, role: 1 } });
+  const owner = await db.collection('users').findOne({ _id: transaction.user_id, role: { $in: ['user', 'admin'] }, status: 'active' }, { session, projection: { _id: 1, role: 1 } });
   if (!owner) throw new Error('USER_NOT_FOUND');
-  return [await queueNotification(session, owner, `payout-success:${transaction._id}`, 'payout_success', 'Payout successful', 'Your INR payout has been marked successful.', '/')];
+  const last4 = /^\d{4}$/.test(String(transaction.bank_last4 || '')) ? transaction.bank_last4 : 'unavailable';
+  const body = `Payout successful: ₹${notificationInr(transaction.amount_paise)} to bank account ending ${last4} (≈ ${notificationUsdt(transaction.usdt_micro)} USDT).`;
+  return [await queueNotification(session, owner, `payout-success:${transaction._id}`, 'payout_success', 'Payout successful', body, '/')];
 }
 async function deliverPushOutbox(notificationIds) {
   if (!hasVapidConfig() || !Array.isArray(notificationIds) || notificationIds.length === 0) return;
@@ -356,16 +386,20 @@ async function deliverPushOutbox(notificationIds) {
       { $set: { state, updated_at: now(), ...extra }, $unset: { lease_token: '', lease_until: '' } }
     );
     const preference = await db.collection('notification_preferences').findOne({ _id: outbox.recipient_id });
-    if (String(outbox.event_key || '').startsWith('deposit-request:')) {
-      const activeAdmin = await db.collection('users').findOne({ _id: outbox.recipient_id, role: 'admin', status: 'active' }, { projection: { _id: 1 } });
-      if (!activeAdmin) { await finalize('skipped'); continue; }
-    }
-    if (String(outbox.event_key || '').startsWith('payout-success:')) {
-      const activeOwner = await db.collection('users').findOne({ _id: outbox.recipient_id, role: 'user', status: 'active' }, { projection: { _id: 1 } });
-      if (!activeOwner) { await finalize('skipped'); continue; }
+    const eventKey = String(outbox.event_key || '');
+    let requiredRole = '';
+    if (eventKey.startsWith('deposit-request:')) {
+      const activeAdmin = await db.collection('users').findOne({ _id: outbox.recipient_id, role: 'admin', status: 'active' }, { projection: { _id: 1, role: 1 } });
+      if (!activeAdmin || (outbox.recipient_role && outbox.recipient_role !== 'admin')) { await finalize('skipped'); continue; }
+      requiredRole = 'admin';
+    } else if (eventKey.startsWith('payout-success:')) {
+      const activeOwner = await db.collection('users').findOne({ _id: outbox.recipient_id, role: { $in: ['user', 'admin'] }, status: 'active' }, { projection: { _id: 1, role: 1 } });
+      if (!activeOwner || (outbox.recipient_role && outbox.recipient_role !== activeOwner.role)) { await finalize('skipped'); continue; }
+      requiredRole = activeOwner.role;
+    } else {
+      await finalize('skipped'); continue;
     }
     if (preference?.push_enabled !== true) { await finalize('skipped'); continue; }
-    const requiredRole = String(outbox.event_key || '').startsWith('deposit-request:') ? 'admin' : 'user';
     const subscriptions = await db.collection('push_subscriptions').find({ user_id: outbox.recipient_id, user_role: requiredRole, active: true }).limit(5).toArray();
     if (!subscriptions.length) { await finalize('skipped'); continue; }
     const outcomes = await Promise.all(subscriptions.map(async row => {
@@ -446,6 +480,28 @@ app.post('/api/auth/login', authLimiter, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: userDto(req.user) }));
+app.put('/api/profile/contact', requireAuth, mutationLimiter, async (req, res, next) => {
+  try {
+    let telegramId;
+    let phoneNumber;
+    try {
+      telegramId = normalizeUserTelegramId(req.body?.telegramId);
+      phoneNumber = normalizePhoneNumber(req.body?.phoneNumber);
+    } catch (error) {
+      if (error.message === 'USER_TELEGRAM_INVALID') return apiError(res, 400, 'Enter a Telegram username (5–32 letters, numbers or underscores) or a numeric Telegram ID (5–20 digits).');
+      if (error.message === 'PHONE_NUMBER_INVALID') return apiError(res, 400, 'Enter a valid phone number with country code if needed, or leave it blank.');
+      throw error;
+    }
+    const result = await db.collection('users').updateOne(
+      { _id: req.user._id, role: { $in: ['user', 'admin'] }, status: 'active' },
+      { $set: { telegram_id: telegramId, phone_number: phoneNumber, updated_at: now() } }
+    );
+    if (result.matchedCount !== 1) return apiError(res, 409, 'Your account is no longer active. Please sign in again.');
+    const user = await db.collection('users').findOne({ _id: req.user._id });
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, user: userDto(user), message: 'Support contact details saved.' });
+  } catch (error) { next(error); }
+});
 app.post('/api/auth/logout', requireAuth, (req, res, next) => {
   req.session.destroy(error => {
     if (error) return next(error);
@@ -640,17 +696,24 @@ app.post('/api/banks', requireAuth, mutationLimiter, async (req, res, next) => {
     if (!/^\d{6,24}$/.test(account)) return apiError(res, 400, 'Account number must contain 6–24 digits only.');
     if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) return apiError(res, 400, 'Enter a valid 11-character IFSC code.');
     let bankInfo;
-    try {
-      const response = await fetch(`https://ifsc.razorpay.com/${encodeURIComponent(ifsc)}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(6000) });
-      if (!response.ok) return apiError(res, response.status === 404 ? 400 : 502, response.status === 404 ? 'IFSC code was not found.' : 'IFSC verification service is unavailable.');
-      const data = await response.json(); bankInfo = { bank: String(data.BANK || '').trim(), branch: String(data.BRANCH || '').trim() };
-    } catch (_) { return apiError(res, 502, 'Could not verify the IFSC with the bank directory. Try again.'); }
+    // Integration-test fixture only: no production shortcut or user-supplied bank metadata.
+    if (process.env.NODE_ENV === 'test' && ifsc === 'TEST0123456') {
+      bankInfo = { bank: 'CKXchange Smoke Test Bank', branch: 'Smoke Test Branch' };
+    } else {
+      try {
+        const response = await fetch(`https://ifsc.razorpay.com/${encodeURIComponent(ifsc)}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(6000) });
+        if (!response.ok) return apiError(res, response.status === 404 ? 400 : 502, response.status === 404 ? 'IFSC code was not found.' : 'IFSC verification service is unavailable.');
+        const data = await response.json(); bankInfo = { bank: String(data.BANK || '').trim(), branch: String(data.BRANCH || '').trim() };
+      } catch (_) { return apiError(res, 502, 'Could not verify the IFSC with the bank directory. Try again.'); }
+    }
     if (!bankInfo.bank || !bankInfo.branch) return apiError(res, 400, 'Bank directory returned incomplete details.');
     const bank = { _id: id('BNK'), user_id: req.user._id, holder, account_cipher: encryptAccount(account), account_fingerprint: fingerprint(req.user._id, account), account_last4: account.slice(-4), ifsc, bank_name: bankInfo.bank, branch_name: bankInfo.branch, created_at: now() };
     try {
       await runTransaction(async mongoSession => {
-        const active = await db.collection('users').updateOne({ _id: req.user._id, role: 'user', status: 'active' }, { $inc: { activity_seq: 1 } }, { session: mongoSession });
-        if (active.modifiedCount !== 1) throw new Error('ACCOUNT_NOT_ACTIVE');
+        // Re-check the active account inside the transaction without relying on a dummy write.
+        // This safely permits active admins to use their own customer wallet and bank features too.
+        const active = await db.collection('users').findOne({ _id: req.user._id, role: { $in: ['user', 'admin'] }, status: 'active' }, { session: mongoSession, projection: { _id: 1 } });
+        if (!active) throw new Error('ACCOUNT_NOT_ACTIVE');
         await db.collection('banks').insertOne(bank, { session: mongoSession });
       });
     } catch (error) {
@@ -738,8 +801,10 @@ app.post('/api/deposits', requireAuth, mutationLimiter, async (req, res, next) =
       network, tx_hash: txHash, deposit_address: depositAddress.address, created_at: created, updated_at: created };
     try {
       const notificationIds = await runTransaction(async mongoSession => {
-        const active = await db.collection('users').updateOne({ _id: req.user._id, role: 'user', status: 'active' }, { $inc: { activity_seq: 1 } }, { session: mongoSession });
-        if (active.modifiedCount !== 1) throw new Error('ACCOUNT_NOT_ACTIVE');
+        // Re-check the active account inside the transaction without relying on a dummy write.
+        // This safely permits active admins to use their own customer wallet and bank features too.
+        const active = await db.collection('users').findOne({ _id: req.user._id, role: { $in: ['user', 'admin'] }, status: 'active' }, { session: mongoSession, projection: { _id: 1 } });
+        if (!active) throw new Error('ACCOUNT_NOT_ACTIVE');
         await db.collection('transactions').insertOne(transaction, { session: mongoSession });
         return queueDepositAdminNotifications(mongoSession, transaction);
       });
@@ -766,10 +831,10 @@ app.post('/api/payouts', requireAuth, mutationLimiter, async (req, res, next) =>
     const txId = id('PAY'); const created = now();
     const transaction = await runTransaction(async mongoSession => {
       const users = db.collection('users');
-      const user = await users.findOne({ _id: req.user._id, role: 'user', status: 'active' }, { session: mongoSession, projection: { available_usdt_micro: 1 } });
+      const user = await users.findOne({ _id: req.user._id, role: { $in: ['user', 'admin'] }, status: 'active' }, { session: mongoSession, projection: { available_usdt_micro: 1 } });
       if (!user) throw new Error('ACCOUNT_NOT_ACTIVE');
       if (user.available_usdt_micro < usdtMicro) throw new Error('INSUFFICIENT_BALANCE');
-      const changed = await users.updateOne({ _id: req.user._id, role: 'user', status: 'active', available_usdt_micro: { $gte: usdtMicro } }, { $inc: { available_usdt_micro: -usdtMicro, reserved_usdt_micro: usdtMicro } }, { session: mongoSession });
+      const changed = await users.updateOne({ _id: req.user._id, role: { $in: ['user', 'admin'] }, status: 'active', available_usdt_micro: { $gte: usdtMicro } }, { $inc: { available_usdt_micro: -usdtMicro, reserved_usdt_micro: usdtMicro } }, { session: mongoSession });
       if (changed.modifiedCount !== 1) throw new Error('INSUFFICIENT_BALANCE');
       const txn = { _id: txId, user_id: req.user._id, type: 'payout', status: 'pending', amount_paise: amountPaise, usdt_micro: usdtMicro,
         bank_id: bank._id, bank_holder: bank.holder, bank_cipher: bank.account_cipher, bank_last4: bank.account_last4, bank_name: bank.bank_name,
@@ -827,7 +892,7 @@ app.get('/api/admin/users', async (req, res, next) => {
     const filter = q ? { $or: [{ _id: new RegExp(escapedRegExp(q), 'i') }, { name: new RegExp(escapedRegExp(q), 'i') }, { email: new RegExp(escapedRegExp(q), 'i') }] } : {};
     const total = await db.collection('users').countDocuments(filter);
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
-    const rows = await db.collection('users').find(filter, { projection: { name: 1, email: 1, role: 1, status: 1, available_usdt_micro: 1, reserved_usdt_micro: 1, created_at: 1 } }).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
+    const rows = await db.collection('users').find(filter, { projection: { name: 1, email: 1, role: 1, status: 1, telegram_id: 1, phone_number: 1, available_usdt_micro: 1, reserved_usdt_micro: 1, created_at: 1 } }).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
     res.json({ users: rows.map(auditSafeUser), pagination: paginationDto(page, pageSize, total) });
   } catch (error) { next(error); }
 });

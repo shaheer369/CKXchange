@@ -46,6 +46,7 @@
     recharge: ['WALLET', 'Add USDT', 'Submit a deposit transaction for verification.'],
     history: ['ACTIVITY', 'Transaction history', 'Track deposit and payout status updates.'],
     profile: ['ACCOUNT', 'Profile & settings', 'Your CKXchange account details and settings.'],
+    notifications: ['YOUR ACCOUNT', 'Notification center', 'Review account alerts and manage browser delivery.'],
     admin: ['ADMINISTRATION', 'Admin panel', 'Review deposit claims, payout requests and account activity.']
   };
   const fmtNumber = (value, digits = 4) => Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -66,6 +67,21 @@
     const last4 = raw.match(/(\d{4})$/)?.[1];
     return last4 ? `•••• ${last4}` : (raw || '—');
   };
+  const shortHash = value => {
+    const raw = String(value || '');
+    return raw.length > 22 ? `${raw.slice(0, 12)}…${raw.slice(-8)}` : raw;
+  };
+  function renderAuditDetails(details) {
+    const entries = Object.entries(details && typeof details === 'object' && !Array.isArray(details) ? details : {});
+    if (!entries.length) return '<div class="settings-desc">No additional details.</div>';
+    return `<div class="audit-details">${entries.map(([key, value]) => {
+      const raw = typeof value === 'string' ? value : JSON.stringify(value);
+      if (/tx.?hash|transaction.?hash/i.test(key) && raw) {
+        return `<div class="audit-detail-row"><span class="audit-detail-label">${safe(key)}</span><code class="audit-detail-hash" title="${safe(raw)}">${safe(shortHash(raw))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(raw)}" aria-label="Copy full ${safe(key)}">Copy hash</button></div>`;
+      }
+      return `<div class="audit-detail-row"><span class="audit-detail-label">${safe(key)}</span><span class="audit-detail-value">${safe(raw ?? '')}</span></div>`;
+    }).join('')}</div>`;
+  }
   function toast(message, type = 'success') {
     const region = $('toastRegion'); if (!region) return;
     const node = document.createElement('div'); node.className = 'toast' + (type === 'error' ? ' error' : '');
@@ -114,6 +130,13 @@
     const miniName = document.querySelector('.mini-name'); if (miniName) miniName.textContent = state.user?.name || 'CKXchange member';
     const miniRole = document.querySelector('.mini-role'); if (miniRole) miniRole.textContent = admin ? 'Administrator' : 'Member';
     const initialAvatar = document.querySelector('#page-profile .avatar'); if (initialAvatar) initialAvatar.textContent = (state.user?.name || 'CX').split(/\s+/).slice(0,2).map(x => x[0] || '').join('').slice(0,2);
+    const contactForm = $('contactSettingsForm');
+    if (contactForm && contactForm.dataset.userId !== String(state.user?.id || '')) {
+      $('telegramContactId').value = state.user?.telegramId || '';
+      $('contactPhoneNumber').value = state.user?.phoneNumber || '';
+      contactForm.dataset.userId = String(state.user?.id || '');
+      $('contactSettingsStatus').textContent = 'Your details are private and used for account support only.';
+    }
   }
   function setAuthMode(mode) {
     authMode = mode === 'register' ? 'register' : 'login';
@@ -186,6 +209,8 @@
     const count = Number(state.unreadNotifications || 0);
     const badge = $('notificationBellCount');
     if (badge) { badge.hidden = count < 1; badge.textContent = count > 99 ? '99+' : String(count); }
+    const navBadge = $('notificationNavCount');
+    if (navBadge) { navBadge.hidden = count < 1; navBadge.textContent = count > 99 ? '99+' : String(count); }
     const unreadLabel = $('notificationUnreadLabel');
     if (unreadLabel) unreadLabel.textContent = `${count} unread`;
     const list = $('notificationList');
@@ -574,7 +599,7 @@
         const list = adminLists[kind];
         const data = await request(`/api/admin/transactions?type=${kind === 'deposits' ? 'deposit' : 'payout'}&page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
         if (kind === 'deposits') {
-          $('adminDepositsRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${safe(t.network || 'TRC20')}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="copy-inline"><code class="admin-hash">${safe(t.txHash)}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(t.txHash)}" aria-label="Copy transaction hash for ${safe(t.id)}">Copy hash</button></div></td><td><div class="table-main">${fmtNumber(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
+          $('adminDepositsRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${safe(t.network || 'TRC20')}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="copy-inline"><code class="admin-hash" title="${safe(t.txHash)}">${safe(shortHash(t.txHash))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(t.txHash)}" aria-label="Copy transaction hash for ${safe(t.id)}">Copy hash</button></div></td><td><div class="table-main">${fmtNumber(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
           $('adminDepositsEmpty').hidden = (data.transactions || []).length !== 0;
         } else {
           $('adminPayoutRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)} · ${safe(t.holder||'')}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="admin-user-muted">${safe(t.bank||'')} · ${safe(t.branch||'')}</div><div class="copy-inline"><div class="admin-user-muted">A/C ${safe(t.account||masked(t.last4))} · ${safe(t.ifsc||'')}</div>${t.account ? `<button class="admin-copy-btn" type="button" data-copy-value="${safe(t.account)}" aria-label="Copy payout account number for ${safe(t.id)}">Copy account no.</button>` : ''}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${money(t.amount)}</div><div class="table-sub">${fmtNumber(t.usdt,6)} USDT reserved</div></td><td>${statusBadge(t.status)}${t.bankReference?`<div class="table-sub">Ref: ${safe(t.bankReference)}</div>`:''}</td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions">${t.status==='pending'?`<button class="primary-btn" data-admin-action="payout-approve" data-id="${safe(t.id)}">Approve</button>`:''}${t.status==='processing'?`<button class="primary-btn" data-admin-action="payout-complete" data-id="${safe(t.id)}">Mark successful</button><button class="secondary-btn" data-admin-action="payout-fail" data-id="${safe(t.id)}">Mark failed</button>`:''}<button class="danger-btn" data-admin-action="payout-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
@@ -584,13 +609,13 @@
       } else if (activeAdminSubPage === 'users') {
         const list = adminLists.users;
         const data = await request(`/api/admin/users?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
-        $('adminUsersRows').innerHTML = (data.users || []).map(u=>`<tr><td><div class="table-main">${safe(u.name)}</div><div class="table-sub">${safe(u.id)}</div></td><td>${safe(u.email)}</td><td>${safe(u.role)}</td><td>${fmtNumber(u.availableUsdt,4)}<div class="table-sub">Reserved ${fmtNumber(u.reservedUsdt,4)}</div></td><td>${safe(u.status)}</td></tr>`).join('');
+        $('adminUsersRows').innerHTML = (data.users || []).map(u=>`<tr><td><div class="table-main">${safe(u.name)}</div><div class="table-sub">${safe(u.id)}</div><div class="table-sub">Telegram: ${safe(u.telegramId || 'Not linked')}</div><div class="table-sub">Phone: ${safe(u.phoneNumber || 'Not provided')}</div></td><td>${safe(u.email)}</td><td>${safe(u.role)}</td><td>${fmtNumber(u.availableUsdt,4)}<div class="table-sub">Reserved ${fmtNumber(u.reservedUsdt,4)}</div></td><td>${safe(u.status)}</td></tr>`).join('');
         $('adminUsersEmpty').hidden = (data.users || []).length !== 0;
         updateAdminPagination('users', data.pagination);
       } else if (activeAdminSubPage === 'audit') {
         const list = adminLists.audit;
         const data = await request(`/api/admin/audit?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
-        $('adminAuditRows').innerHTML = (data.entries || []).length ? data.entries.map(entry=>`<div class="settings-row"><div class="settings-icon">✓</div><div class="settings-content"><div class="settings-name">${safe(entry.action)}</div><div class="settings-desc">${safe(entry.adminName)}${entry.adminEmail ? ` · ${safe(entry.adminEmail)}` : ''} · ${safe(dateText(entry.createdAt))} · Target ${safe(entry.targetId||'—')}</div><div class="settings-desc">${safe(JSON.stringify(entry.details))}</div></div></div>`).join('') : '';
+        $('adminAuditRows').innerHTML = (data.entries || []).length ? data.entries.map(entry=>`<div class="settings-row audit-row"><div class="settings-icon">✓</div><div class="settings-content"><div class="settings-name">${safe(entry.action)}</div><div class="settings-desc">${safe(entry.adminName)}${entry.adminEmail ? ` · ${safe(entry.adminEmail)}` : ''} · ${safe(dateText(entry.createdAt))} · Target ${safe(entry.targetId||'—')}</div>${renderAuditDetails(entry.details)}</div></div>`).join('') : '';
         $('adminAuditEmpty').hidden = (data.entries || []).length !== 0;
         updateAdminPagination('audit', data.pagination);
       } else if (activeAdminSubPage === 'settings') {
@@ -681,6 +706,23 @@
       event.preventDefault(); adminLists[kind].q = $(inputId).value.trim().slice(0,80); adminLists[kind].page = 1;
       if (activeAdminSubPage !== kind) setAdminSubPage(kind, { historyMode: 'push' }); else loadAdmin().catch(error => toast(error.message,'error'));
     });
+  });
+
+  if ($('contactSettingsForm')) $('contactSettingsForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = $('saveContactSettingsBtn'); button.disabled = true;
+    $('contactSettingsStatus').textContent = 'Saving contact details…';
+    try {
+      const result = await request('/api/profile/contact', { method:'PUT', body:{ telegramId: $('telegramContactId').value.trim(), phoneNumber: $('contactPhoneNumber').value.trim() } });
+      state.user = { ...state.user, ...result.user };
+      $('telegramContactId').value = state.user.telegramId || '';
+      $('contactPhoneNumber').value = state.user.phoneNumber || '';
+      $('contactSettingsStatus').textContent = 'Saved. These details are visible to authorized CKXchange administrators only.';
+      toast(result.message || 'Support contact details saved.');
+    } catch (error) {
+      $('contactSettingsStatus').textContent = 'Could not save these details. Check the fields and try again.';
+      toast(error.message, 'error');
+    } finally { button.disabled = false; }
   });
 
   if ($('supportSettingsForm')) $('supportSettingsForm').addEventListener('submit', async event => {
@@ -802,7 +844,7 @@
     finally {submit.disabled=!networkConfig.depositConfigured;}
   });
   $('historyFilter').addEventListener('change',renderHistoryTable);
-  $('notificationBell').addEventListener('click', async () => { go('profile'); await loadNotifications({ quiet: true }).catch(() => {}); $('notificationPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $('notificationBell').addEventListener('click', async () => { go('notifications'); await loadNotifications({ quiet: true }).catch(() => {}); });
   $('refreshNotifications').addEventListener('click', async () => { try { await loadNotifications(); toast('Notifications refreshed.'); } catch (_) {} });
   $('markAllNotificationsRead').addEventListener('click', async () => { try { await request('/api/notifications/read-all', { method: 'POST', body: {} }); await loadNotifications({ quiet: true }); toast('All notifications marked as read.'); } catch (error) { toast(error.message, 'error'); } });
   $('notificationsInAppEnabled').addEventListener('change', async event => {

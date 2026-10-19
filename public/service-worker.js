@@ -1,11 +1,11 @@
 'use strict';
-const CACHE_NAME = 'ckxchange-static-v1';
+const CACHE_NAME = 'ckxchange-static-v2-3-0';
 const STATIC_ASSETS = [
   '/offline.html',
   '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/app.js?v=2.1.0'
+  '/icons/ckx-logo-192.png?v=2.3.0',
+  '/icons/ckx-logo-512.png?v=2.3.0',
+  '/app.js?v=2.3.0'
 ];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS)).then(() => self.skipWaiting()));
@@ -44,8 +44,8 @@ self.addEventListener('push', event => {
   const title = String(data.title || 'CKXchange notification').slice(0, 80);
   const options = {
     body: String(data.body || 'You have a new CKXchange update.').slice(0, 180),
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon: '/icons/ckx-logo-192.png?v=2.3.0',
+    badge: '/icons/ckx-logo-192.png?v=2.3.0',
     tag: String(data.tag || 'ckxchange-update').slice(0, 120),
     renotify: false,
     data: { url: typeof data.url === 'string' && data.url.startsWith('/') && !data.url.startsWith('//') ? data.url : '/' }

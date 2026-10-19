@@ -90,6 +90,10 @@ async function waitForStart(proc, origin) {
   const manifest = await api(origin, '/manifest.webmanifest');
   assert.equal(manifest.response.status, 200, 'PWA manifest should be served');
   assert.match(manifest.text, /\"display\": \"standalone\"/, 'PWA should use an installable standalone display mode');
+  assert.match(manifest.text, /ckx-logo-512\.png/, 'PWA manifest should use the CKX brand logo');
+  const logoResponse = await fetch(`${origin}/icons/ckx-logo-192.png?v=2.3.0`);
+  assert.equal(logoResponse.status, 200, 'CKX PWA logo must be served as a static asset');
+  assert.match(logoResponse.headers.get('content-type') || '', /image\/png/, 'CKX PWA logo must be served as PNG');
   const serviceWorker = await api(origin, '/service-worker.js');
   assert.equal(serviceWorker.response.status, 200, 'PWA service worker should be served');
   assert.match(serviceWorker.text, /url\.pathname\.startsWith\('\/api\/'\)/, 'service worker must never cache API responses');
@@ -110,6 +114,13 @@ async function waitForStart(proc, origin) {
   assert.equal(initialPreferences.response.status, 200, 'authenticated customers should read notification preferences');
   assert.equal(initialPreferences.data.inAppEnabled, true, 'in-app notifications should default to enabled');
   assert.equal(initialPreferences.data.pushConfigured, false, 'push should report unconfigured in integration tests without VAPID keys');
+  const contactSaved = await api(origin, '/api/profile/contact', { method: 'PUT', cookie: customer.cookie, csrf: customer.csrf, body: { telegramId: '@SmokeCustomer', phoneNumber: '+91 98765 43210' } });
+  assert.equal(contactSaved.response.status, 200, `customer support contacts should save: ${JSON.stringify(contactSaved.data)}`);
+  assert.equal(contactSaved.data.user.telegramId, '@SmokeCustomer', 'Telegram username should be normalized and saved');
+  assert.equal(contactSaved.data.user.phoneNumber, '+919876543210', 'phone number should be normalized and saved');
+  const invalidContact = await api(origin, '/api/profile/contact', { method: 'PUT', cookie: customer.cookie, csrf: customer.csrf, body: { telegramId: '@SmokeCustomer', phoneNumber: 'not-a-phone' } });
+  assert.equal(invalidContact.response.status, 400, 'invalid phone numbers must be rejected');
+  assert.equal((await api(origin, '/api/auth/me', { cookie: customer.cookie })).data.user.phoneNumber, '+919876543210', 'saved support details should persist to the authenticated account');
 
   const adminCreate = spawnSync(node, ['scripts/create-admin.js', '--email', 'smoke-admin@example.com', '--name', 'SMOKE ADMIN'], {
     cwd: root, env: { ...env, ADMIN_PASSWORD: testPassword }, encoding: 'utf8'
@@ -128,6 +139,9 @@ async function waitForStart(proc, origin) {
   assert.equal(pagedUsers.response.status, 200);
   assert.equal(pagedUsers.data.pagination.pageSize, 100, 'server must clamp excessive page sizes');
   assert.ok(Array.isArray(pagedUsers.data.users), 'users endpoint should return a paginated array');
+  const customerAdminView = pagedUsers.data.users.find(row => row.email === 'smoke-user@example.com');
+  assert.equal(customerAdminView.telegramId, '@SmokeCustomer', 'authorized admins should see customer Telegram contact details');
+  assert.equal(customerAdminView.phoneNumber, '+919876543210', 'authorized admins should see customer phone details');
   const pagedDeposits = await api(origin, '/api/admin/transactions?type=deposit&page=1&pageSize=999', { cookie: admin.cookie });
   assert.equal(pagedDeposits.response.status, 200);
   assert.equal(pagedDeposits.data.pagination.pageSize, 100, 'transaction queue must clamp excessive page sizes');
@@ -211,8 +225,8 @@ async function waitForStart(proc, origin) {
   assert.equal((await api(origin, `/api/admin/payouts/${payout.data.transaction.id}/complete`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankReference: 'SMOKE-BANK-REF-123' } })).response.status, 200);
   assert.equal((await api(origin, `/api/admin/payouts/${payout.data.transaction.id}/complete`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankReference: 'SMOKE-BANK-REF-123' } })).response.status, 409, 'payout must not complete twice');
   const payoutSuccessNotes = await api(origin, '/api/notifications', { cookie: customer.cookie });
-  const payoutSuccessNote = payoutSuccessNotes.data.notifications.find(row => row.kind === 'payout_success' && row.body.includes('marked successful'));
-  assert.ok(payoutSuccessNote, 'successful payout should notify its owner');
+  const payoutSuccessNote = payoutSuccessNotes.data.notifications.find(row => row.kind === 'payout_success' && row.body.includes('₹110.00') && row.body.includes(`ending ${expectedFullAccount.slice(-4)}`));
+  assert.ok(payoutSuccessNote, 'successful payout should notify its owner with amount and last four bank digits');
   const adminAfterPayoutNotes = await api(origin, '/api/notifications', { cookie: admin.cookie });
   assert.equal(adminAfterPayoutNotes.data.notifications.some(row => row.kind === 'payout_success'), false, 'payout success notification must not be disclosed to admins');
   assert.equal((await api(origin, `/api/notifications/${encodeURIComponent(payoutSuccessNote.id)}/read`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 404, 'admins must not mark a customer notification as read');
@@ -222,6 +236,21 @@ async function waitForStart(proc, origin) {
   state = await api(origin, '/api/state', { cookie: customer.cookie });
   assert.equal(state.data.user.availableUsdt, 4);
   assert.equal(state.data.user.reservedUsdt, 0);
+
+  // The administrator can also use their own customer-facing bank/deposit/payout endpoints.
+  const adminDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { amountUsdt: 2, network: 'TRC20', txHash: 'd'.repeat(64) } });
+  assert.equal(adminDeposit.response.status, 201, `active admin deposit submission failed: ${JSON.stringify(adminDeposit.data)}`);
+  const adminDepositNote = (await api(origin, '/api/notifications', { cookie: admin.cookie })).data.notifications.find(row => row.kind === 'deposit_request' && row.body.includes('2 USDT') && row.body.includes('₹220.00'));
+  assert.ok(adminDepositNote, 'deposit notifications should include USDT amount and INR valuation');
+  assert.equal((await api(origin, `/api/admin/deposits/${encodeURIComponent(adminDeposit.data.transaction.id)}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 200, 'admin deposit should be approvable by an admin');
+  const adminBank = await api(origin, '/api/banks', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { holder: 'SMOKE ADMIN', account: '9876543210007654', ifsc: 'TEST0123456' } });
+  assert.equal(adminBank.response.status, 201, `active admin bank account creation failed: ${JSON.stringify(adminBank.data)}`);
+  const adminPayout = await api(origin, '/api/payouts', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankId: adminBank.data.bank.id, amountInr: 110 } });
+  assert.equal(adminPayout.response.status, 201, `active admin payout submission failed: ${JSON.stringify(adminPayout.data)}`);
+  assert.equal((await api(origin, `/api/admin/payouts/${encodeURIComponent(adminPayout.data.transaction.id)}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 200, "admin payout should be approvable");
+  assert.equal((await api(origin, `/api/admin/payouts/${encodeURIComponent(adminPayout.data.transaction.id)}/complete`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankReference: 'ADMIN-SMOKE-REF' } })).response.status, 200, "admin payout should be completable");
+  const adminPayoutNotes = await api(origin, '/api/notifications', { cookie: admin.cookie });
+  assert.ok(adminPayoutNotes.data.notifications.some(row => row.kind === 'payout_success' && row.body.includes('₹110.00') && row.body.includes('ending 7654')), "admin successful payout notification should include amount and bank last four digits");
 
   // Exercise account deletion against a disposable account with no balances or open requests.
   const deletionCsrf = await api(origin, '/api/auth/csrf');

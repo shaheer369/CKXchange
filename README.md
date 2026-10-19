@@ -234,7 +234,7 @@ Replace the example email and name. Use a new password of 14–128 characters co
 - The INR/USDT rate is a configured reference value, not an automatic market quote. The admin can change it in the Admin panel. Existing transactions keep their recorded amounts.
 - The frontend and backend are served from the same Express origin. Admin API routes are centrally role-protected; browser-side changes do not grant admin permissions.
 
-## PWA and notifications (v2.1.0)
+## PWA and notifications (v2.3.0)
 
 CKXchange can be installed on supported phones and desktop browsers. The service worker caches only versioned/static assets, icons, the manifest, and a generic offline page. It does **not** cache the personalized HTML shell, login/session responses, balances, bank details, payout slips, or `/api` responses. Offline mode is informational only; all financial actions still require a live server connection.
 
@@ -248,14 +248,14 @@ CKXchange can be installed on supported phones and desktop browsers. The service
 
 2. In Vercel → Project → **Settings → Environment Variables**, add `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT`. Use the generated public/private key values, and replace the subject example with a contact mailbox you control, for example `mailto:support@your-domain.example`. Apply them to Production (and Preview only if you need push there), then redeploy.
 3. Keep `VAPID_PRIVATE_KEY` server-side and secret. Do not paste it into HTML, frontend JavaScript, GitHub issues, or chat. Generate one production key pair and keep it stable; rotating it causes existing browser subscriptions to stop working until users enable push again.
-4. Sign in to CKXchange, open the bell or Profile → Notifications, then choose **Enable browser push** and grant permission. Each admin who needs deposit-request push alerts must enable it in their own admin session. Users may enable push to receive their own successful-payout alert.
+4. Sign in to CKXchange, open the notification bell or the dedicated Notifications page, then choose **Enable browser push** and grant permission. Each admin who needs deposit-request push alerts must enable it in their own admin session. Users may enable push to receive their own successful-payout alert.
 
-If the VAPID variables are absent or invalid, in-app history and unread counts continue to work, while the UI explains that browser push is not configured. Web Push support varies by browser/device; iOS/iPadOS requires a supported version and a Home Screen installation. Notification payloads contain generic messages, never amounts or bank account details.
+If the VAPID variables are absent or invalid, in-app history and unread counts continue to work, while the UI explains that browser push is not configured. Web Push support varies by browser/device; iOS/iPadOS requires a supported version and a Home Screen installation. Notification payloads include the transaction amount and the payout bank account’s last four digits as requested. They do not include the full account number; lock-screen previews may still reveal the amount and last four digits, so turn off OS lock-screen notification previews if that is not suitable for your device.
 
 ### Notification recipients
 
-- A newly submitted USDT deposit creates a notification for each active administrator only.
-- A payout-success notification is created for the owner of that specific payout only, inside the same database transaction as the successful status change.
+- A newly submitted USDT deposit creates a notification for each active administrator only; the message includes the USDT amount, INR estimate, and an abbreviated transaction hash.
+- A payout-success notification is created for the owner of that specific payout only, inside the same database transaction as the successful status change; it includes the INR amount, USDT equivalent, and bank account last four digits.
 - Notification history/read endpoints filter by the signed-in recipient. Push subscriptions are associated with the current MongoDB user and their server-verified role. Duplicate database events use deterministic IDs, and push display tags prevent duplicate alerts from stacking.
 
 The full account number on a payout slip is returned by a dedicated no-cache endpoint only after confirming that the payout belongs to the signed-in account. PNG slips now include the full number as requested; downloaded slips can contain sensitive bank details, so share them carefully.
