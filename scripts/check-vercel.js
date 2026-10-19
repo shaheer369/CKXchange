@@ -12,7 +12,7 @@ const packageJson = JSON.parse(read('package.json'));
 assert.equal(config.framework, 'express', 'Vercel must use the Express framework preset');
 assert.ok(config.regions.includes('bom1'), 'Function should be deployed in Mumbai for the intended audience');
 assert.ok(config.functions['server.js'], 'Vercel Function configuration must match server.js');
-assert.equal(config.functions['server.js'].includeFiles, 'views/**', 'Dynamic HTML template must be included in the function bundle');
+assert.equal(config.functions['server.js'].includeFiles, 'views/**', 'Dynamic HTML template must be included in the function bundle; imported lib modules are traced by the bundler');
 assert.ok(fs.existsSync(path.join(root, 'views', 'index.html')), 'Session-aware HTML must be outside the static public folder');
 assert.ok(!fs.existsSync(path.join(root, 'public', 'index.html')), 'Vercel must not serve a static homepage that bypasses session-aware HTML');
 assert.ok(server.includes('module.exports = app;'), 'Express app must be exported for Vercel');

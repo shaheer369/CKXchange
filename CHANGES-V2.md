@@ -22,3 +22,25 @@
 - Run the MongoDB integration suite against a disposable test database.
 - Manually verify account deletion, the six admin URLs, request pagination/search, support username updates, and the clipboard controls on a staging deployment.
 - Do not use CKXchange to handle real money until financial, authorization, session, and reconciliation behavior has been independently reviewed and tested.
+
+
+# CKXchange v2.1.0 — PWA and notification update
+
+## Changes in this source copy
+
+- Added an installable PWA manifest, branded 192px/512px icons, Apple Home Screen metadata, and service-worker registration.
+- Added network/offline state messaging and a generic offline screen. Cache rules exclude session-aware HTML, API responses, balances, bank data, and payout slips.
+- Added in-app notification history, unread count, mark-read actions, and an in-app notification preference.
+- Added optional Web Push using Node's built-in crypto and HTTPS modules (no added npm dependency), VAPID environment variables, browser subscription controls, endpoint-host validation, and a key generator script.
+- Deposit-request notifications are written for active admins in the same MongoDB transaction as the pending deposit; payout-success notification is written only for the owner in the same transaction that marks the payout successful. Push delivery is outbox-based, retryable, and uses notification tags to avoid stacking duplicate browser alerts.
+- Added an owner-scoped no-cache payout receipt endpoint and full account-number display in the on-screen receipt and PNG export. Ordinary transaction-list responses remain masked.
+- Added notification crypto checks to `npm run check`.
+
+## Required Vercel configuration
+
+For browser push, generate a key pair with `node scripts/generate-vapid.js`, then configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in Vercel and redeploy. Do not commit or share the private key. In-app history works without these variables.
+
+## Verification status
+
+- `npm run check` and `npm test` passed in the source workspace, including static UI/security checks and Web Push key/encryption format tests.
+- The full MongoDB HTTP integration suite and live delivery to browser push services were **not run** here because there is no disposable MongoDB test URI or live push subscription in this workspace. Those need staging verification before production use.

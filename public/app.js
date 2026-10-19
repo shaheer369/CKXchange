@@ -2,7 +2,7 @@
   'use strict';
   const RATE_DEFAULT = 106;
   const $ = id => document.getElementById(id);
-  const state = { user: null, balance: 0, reservedUsdt: 0, rate: RATE_DEFAULT, banks: [], transactions: [], supportUsername: '' };
+  const state = { user: null, balance: 0, reservedUsdt: 0, rate: RATE_DEFAULT, banks: [], transactions: [], supportUsername: '', notifications: [], unreadNotifications: 0, notificationPrefs: { inAppEnabled: true, pushEnabled: false, pushConfigured: false } };
   let csrfToken = '';
   let authMode = 'login';
   let currentReceipt = null;
@@ -22,6 +22,8 @@
     audit: { page: 1, pageSize: 25, q: '' }
   };
   let pollHandle = null;
+  let pwaRegistration = null;
+  let notificationLoadPending = false;
   const ADMIN_SUBPAGES = ['overview', 'deposits', 'payouts', 'users', 'audit', 'settings'];
   const ADMIN_META = {
     overview: ['ADMINISTRATION', 'Admin overview', 'Pending workload and high-level account activity.'],
@@ -132,6 +134,7 @@
       if (!state.user || document.hidden) return;
       try {
         await refreshState({ quiet:true });
+        await loadNotifications({ quiet:true }).catch(() => {});
         // If an admin role was revoked while this document was open, reload through the
         // role-aware server route so privileged markup is removed as well as API access denied.
         if ($('page-admin') && state.user?.role !== 'admin') {
@@ -148,6 +151,113 @@
       }
     }, 10000);
   }
+  function updateOfflineState() {
+    const banner = $('offlineBanner');
+    if (banner) banner.hidden = navigator.onLine;
+    if (!navigator.onLine && state.user) toast('You are offline. Financial actions need a live connection.', 'error');
+  }
+  async function initializePwa() {
+    updateOfflineState();
+    window.addEventListener('online', updateOfflineState);
+    window.addEventListener('offline', updateOfflineState);
+    if (!('serviceWorker' in navigator)) return;
+    try { pwaRegistration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' }); }
+    catch (error) { console.warn('CKXchange service worker could not be registered:', error?.message || error); }
+  }
+  function renderNotificationSettings() {
+    const prefs = state.notificationPrefs || {};
+    const inApp = $('notificationsInAppEnabled');
+    if (inApp) inApp.checked = prefs.inAppEnabled !== false;
+    const pushButton = $('togglePushNotifications');
+    if (pushButton) {
+      pushButton.textContent = prefs.pushEnabled ? 'Disable browser push' : 'Enable browser push';
+      pushButton.disabled = (!prefs.pushConfigured && !prefs.pushEnabled) || ((!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) && !prefs.pushEnabled);
+    }
+    const status = $('notificationPushStatus');
+    if (!status) return;
+    if (!prefs.pushConfigured && !prefs.pushEnabled) status.textContent = 'Browser push has not been configured on the server. In-app notifications work without push keys.';
+    else if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) status.textContent = prefs.pushEnabled ? 'A browser push subscription exists for this account but this browser cannot manage it here.' : 'This browser does not support Web Push. In-app notification history remains available.';
+    else if (Notification.permission === 'denied' && !prefs.pushEnabled) status.textContent = 'Notifications are blocked in browser settings. Allow them for this website to enable push.';
+    else if (prefs.pushEnabled && !prefs.pushConfigured) status.textContent = 'Push keys are missing on the server. Disable the existing subscription here; push delivery will resume after the keys are restored.';
+    else if (prefs.pushEnabled) status.textContent = 'Browser push is enabled for this account. Use Disable to remove its registered push subscriptions.';
+    else status.textContent = 'Browser push is optional. Tap Enable and approve the browser permission when prompted.';
+  }
+  function renderNotifications() {
+    const count = Number(state.unreadNotifications || 0);
+    const badge = $('notificationBellCount');
+    if (badge) { badge.hidden = count < 1; badge.textContent = count > 99 ? '99+' : String(count); }
+    const unreadLabel = $('notificationUnreadLabel');
+    if (unreadLabel) unreadLabel.textContent = `${count} unread`;
+    const list = $('notificationList');
+    if (list) {
+      if (state.notificationPrefs?.inAppEnabled === false) list.innerHTML = '<div class="notification-empty">In-app notification history is disabled. Turn it on above to view saved notifications.</div>';
+      else if (!state.notifications.length) list.innerHTML = '<div class="notification-empty">You have no notifications yet.</div>';
+      else list.innerHTML = state.notifications.map(item => `<button type="button" class="notification-item ${item.read ? 'read' : 'unread'}" data-notification-open="${safe(item.id)}"><span class="notification-unread-dot" aria-hidden="true"></span><span class="notification-item-content"><span class="notification-item-title">${safe(item.title)}</span><span class="notification-item-body">${safe(item.body)}</span><span class="notification-item-date">${safe(dateText(item.createdAt))}${item.read ? ' · Read' : ' · Unread'}</span></span></button>`).join('');
+    }
+    const mark = $('markAllNotificationsRead');
+    if (mark) mark.disabled = count < 1;
+    renderNotificationSettings();
+  }
+  async function loadNotifications({ quiet = false } = {}) {
+    if (!state.user || notificationLoadPending) return;
+    notificationLoadPending = true;
+    try {
+      const prefs = await request('/api/notifications/preferences');
+      const result = await request('/api/notifications');
+      state.notificationPrefs = { ...prefs, inAppEnabled: result.inAppEnabled !== false && prefs.inAppEnabled !== false };
+      state.notifications = result.notifications || [];
+      state.unreadNotifications = Number(result.unreadCount || 0);
+      renderNotifications();
+    } catch (error) {
+      if (!quiet) toast(error.message || 'Could not load notifications.', 'error');
+      throw error;
+    } finally { notificationLoadPending = false; }
+  }
+  function urlBase64ToUint8Array(value) {
+    const padding = '='.repeat((4 - value.length % 4) % 4);
+    const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from(raw, character => character.charCodeAt(0));
+  }
+  async function togglePushNotifications() {
+    if (!state.user) return;
+    try {
+      if (state.notificationPrefs.pushEnabled) {
+        if (!confirm('Disable browser push notifications for this account on all registered devices?')) return;
+        await request('/api/notifications/unsubscribe', { method: 'POST', body: {} });
+        if (pwaRegistration) {
+          const subscription = await pwaRegistration.pushManager.getSubscription().catch(() => null);
+          if (subscription) await subscription.unsubscribe().catch(() => false);
+        }
+        toast('Browser push notifications disabled.');
+        await loadNotifications({ quiet: true });
+        return;
+      }
+      if (!pwaRegistration && 'serviceWorker' in navigator) pwaRegistration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+      const keyInfo = await request('/api/notifications/push-public-key');
+      if (!keyInfo.configured || !keyInfo.publicKey) throw new Error('Browser push is not configured on the server yet. Set the VAPID environment variables first.');
+      if (!('Notification' in window) || !pwaRegistration?.pushManager) throw new Error('This browser does not support push notifications.');
+      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (permission !== 'granted') throw new Error('Browser notification permission was not granted. You can still use in-app notifications.');
+      let subscription = await pwaRegistration.pushManager.getSubscription();
+      if (!subscription) subscription = await pwaRegistration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(keyInfo.publicKey) });
+      await request('/api/notifications/subscribe', { method: 'POST', body: { subscription: subscription.toJSON() } });
+      toast('Browser push notifications enabled.');
+      await loadNotifications({ quiet: true });
+    } catch (error) { toast(error.message || 'Could not update push notification settings.', 'error'); }
+  }
+  async function openNotification(item) {
+    try {
+      if (!item.read) await request(`/api/notifications/${encodeURIComponent(item.id)}/read`, { method: 'POST', body: {} });
+      await loadNotifications({ quiet: true });
+    } catch (error) { toast(error.message || 'Could not update notification.', 'error'); }
+    if (item.route === '/admin/deposits' && state.user?.role === 'admin') {
+      if (state.user?.role !== 'admin') return;
+      go('admin', false);
+      setAdminSubPage('deposits', { historyMode: 'push' });
+    } else go('home');
+  }
+
   function renderSupportContact(username) {
     const clean = String(username || '').replace(/^@/, '');
     const valid = /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(clean);
@@ -172,6 +282,7 @@
       showApplication();
       await refreshState({ quiet:true });
       await loadSupportContact();
+      await loadNotifications({ quiet: true }).catch(() => {});
       const wantsAdmin = requestedAdminPage();
       const desired = wantsAdmin && state.user.role === 'admin' ? 'admin' : 'home';
       go(desired, false);
@@ -193,7 +304,7 @@
     state.banks = response.banks || []; state.transactions = response.transactions || [];
     if (!document.body.classList.contains('auth-pending')) showApplication();
     renderAll();
-    if (currentReceipt) { const latest = state.transactions.find(t => t.id === currentReceipt.id); if (latest && latest.status !== currentReceipt.status) { currentReceipt = latest; renderReceiptDetails(latest); } }
+    if (currentReceipt) { const latest = state.transactions.find(t => t.id === currentReceipt.id); if (latest && latest.status !== currentReceipt.status) { currentReceipt = { ...latest, account: currentReceipt.account || latest.account }; renderReceiptDetails(currentReceipt); } }
     return response;
   }
   function setAdminSubPage(route, { historyMode = 'none', load = true } = {}) {
@@ -366,13 +477,15 @@
     ctx.fillStyle='#f5f6ff'; ctx.font='700 39px Arial'; ctx.fillText(`Payout ${statusText(status)}`,500,305);
     ctx.fillStyle='#8e97b3'; ctx.font='500 20px Arial'; ctx.fillText('INR payout request receipt',500,344);
     ctx.fillStyle='#fff'; ctx.font='700 58px Arial'; ctx.fillText(money(t.amount),500,430);
-    const rows=[['TRANSACTION ID',t.id||'—'],['DATE & TIME',dateText(t.timestamp)],['ACCOUNT HOLDER',t.holder||'—'],['BANK',t.bank||'—'],['BRANCH',t.branch||'—'],['ACCOUNT NUMBER',masked(t.account)],['IFSC CODE',t.ifsc||'—'],['STATUS',statusText(status)]];
+    const rows=[['TRANSACTION ID',t.id||'—'],['DATE & TIME',dateText(t.timestamp)],['ACCOUNT HOLDER',t.holder||'—'],['BANK',t.bank||'—'],['BRANCH',t.branch||'—'],['ACCOUNT NUMBER',String(t.account || '—')],['IFSC CODE',t.ifsc||'—'],['STATUS',statusText(status)]];
     if(t.bankReference) rows.push(['BANK REFERENCE',t.bankReference]); if(t.rejectionReason) rows.push(['REASON',t.rejectionReason]);
     let y=500;
     for(const [label,value] of rows) {
       ctx.fillStyle='#8992ad'; ctx.font='600 17px Arial'; ctx.textAlign='left'; ctx.fillText(label,90,y);
       ctx.fillStyle=label==='STATUS'?accent:'#f0f1fc'; ctx.font='600 18px Arial'; ctx.textAlign='right';
-      let textValue=String(value); const max=525; while(ctx.measureText(textValue).width>max && textValue.length>6) textValue=textValue.slice(0,-4)+'…';
+      let textValue=String(value); const max=525; let valueFont=18;
+      while(ctx.measureText(textValue).width>max && valueFont>12) { valueFont-=1; ctx.font=`600 ${valueFont}px Arial`; }
+      if(label!=='ACCOUNT NUMBER') while(ctx.measureText(textValue).width>max && textValue.length>6) textValue=textValue.slice(0,-4)+'…';
       ctx.fillText(textValue,910,y); ctx.strokeStyle='rgba(255,255,255,.075)'; ctx.beginPath(); ctx.moveTo(90,y+18); ctx.lineTo(910,y+18); ctx.stroke(); y+=57;
     }
     ctx.textAlign='center'; ctx.fillStyle='#e8c77e'; ctx.font='700 17px Arial'; ctx.fillText('PENDING / PROCESSING IS NOT PROOF OF PAYMENT',500,1018);
@@ -386,14 +499,19 @@
   function renderReceiptDetails(t) {
     const status=t.status||'pending'; $('receiptTitle').textContent=`Payout ${statusText(status)}`;
     $('receiptModal').querySelector('.receipt-head p').textContent=status==='success'?'Your payout is recorded as successful.':status==='processing'?'Your payout request is being processed.':status==='pending'?'Your payout request is waiting for admin review.':`Your payout request was ${statusText(status).toLowerCase()}.`;
-    $('receiptAmount').textContent=money(t.amount); const amountLabel=$('receiptModal').querySelector('.receipt-amount-label'); if(amountLabel) amountLabel.textContent=status==='success'?'AMOUNT SENT · INR':'REQUESTED AMOUNT · INR'; $('receiptId').textContent=t.id; $('receiptDate').textContent=dateText(t.timestamp); $('receiptHolder').textContent=t.holder||'—'; $('receiptBank').textContent=t.bank||'—'; $('receiptBranch').textContent=t.branch||'—'; $('receiptAccount').textContent=masked(t.account); $('receiptIfsc').textContent=t.ifsc||'—';
+    $('receiptAmount').textContent=money(t.amount); const amountLabel=$('receiptModal').querySelector('.receipt-amount-label'); if(amountLabel) amountLabel.textContent=status==='success'?'AMOUNT SENT · INR':'REQUESTED AMOUNT · INR'; $('receiptId').textContent=t.id; $('receiptDate').textContent=dateText(t.timestamp); $('receiptHolder').textContent=t.holder||'—'; $('receiptBank').textContent=t.bank||'—'; $('receiptBranch').textContent=t.branch||'—'; $('receiptAccount').textContent=t.account||'—'; $('receiptIfsc').textContent=t.ifsc||'—';
     $('receiptStatus').textContent=statusText(status); $('receiptStatus').style.color=status==='success'?'var(--green)':status==='pending'?'#f0c477':status==='processing'?'#72b7ff':'var(--red)';
     const icon=$('receiptModal').querySelector('.success-mark'); icon.style.background=status==='success'?'linear-gradient(145deg,#8af4bf,#42d69c)':status==='pending'?'linear-gradient(145deg,#ffe3a1,#dcae4a)':status==='processing'?'linear-gradient(145deg,#acd6ff,#5998df)':'linear-gradient(145deg,#ffb5c2,#e45a7e)'; icon.querySelector('svg path').setAttribute('d',status==='success'?'m5 12 4.5 4.5L19 7':status==='pending'?'M12 6v6l4 2':status==='processing'?'M20 11a8 8 0 1 0 2 5':'M6 6l12 12M18 6 6 18');
   }
-  function openReceipt(t) {
-    currentReceipt=t; renderReceiptDetails(t); $('receiptModal').classList.add('open'); $('closeReceipt').focus();
+  async function openReceipt(t) {
+    if (!t?.id) return;
+    try {
+      const result = await request(`/api/payouts/${encodeURIComponent(t.id)}/receipt`);
+      currentReceipt = result.transaction;
+      renderReceiptDetails(currentReceipt); $('receiptModal').classList.add('open'); $('closeReceipt').focus();
+    } catch (error) { toast(error.message || 'Could not load your payout slip.', 'error'); }
   }
-  function closeReceipt() { $('receiptModal').classList.remove('open'); currentReceipt=null; }
+  function closeReceipt() { $('receiptModal').classList.remove('open'); currentReceipt=null; $('receiptAccount').textContent='—'; }
 
   function renderAdminDepositSettings(result) {
     const entry = result?.addresses?.TRC20 || { address:'', valid:false, source:'not_configured' };
@@ -538,7 +656,8 @@
       catch(error){toast(error.message,'error');} return;
     }
     const slipButton=event.target.closest('[data-view-transaction]');
-    if(slipButton){const txn=state.transactions.find(item=>item.id===slipButton.dataset.viewTransaction); if(txn&&txn.type==='payout') openReceipt(txn); return;}
+    if(slipButton){const txn=state.transactions.find(item=>item.id===slipButton.dataset.viewTransaction); if(txn&&txn.type==='payout') await openReceipt(txn); return;}
+    const notificationButton=event.target.closest('[data-notification-open]'); if(notificationButton){const item=state.notifications.find(value=>value.id===notificationButton.dataset.notificationOpen); if(item) await openNotification(item); return;}
     const adminButton=event.target.closest('[data-admin-action]'); if(adminButton){await adminAction(adminButton);return;}
     const adminCopy=event.target.closest('[data-copy-value]'); if(adminCopy){copyAdminValue(adminCopy.dataset.copyValue,adminCopy);return;}
     const previousPage=event.target.closest('[data-admin-page-prev]'); if(previousPage){const kind=previousPage.dataset.adminPagePrev; if(adminLists[kind]&&adminLists[kind].page>1){adminLists[kind].page-=1;await loadAdmin().catch(error=>toast(error.message,'error'));}return;}
@@ -607,7 +726,7 @@
       csrfToken=result.csrfToken||csrfToken; state.user=result.user;
       // Customer HTML omits admin-only markup. Reload through the server-guarded route after admin sign-in.
       if(state.user.role === 'admin' && !isAdminPath()) { window.location.replace('/admin'); return; }
-      showApplication(); await refreshState({quiet:true}); await loadSupportContact();
+      showApplication(); await refreshState({quiet:true}); await loadSupportContact(); await loadNotifications({quiet:true}).catch(() => {});
       const wantsAdmin = requestedAdminPage();
       const initialPage = wantsAdmin && state.user.role === 'admin' ? 'admin' : 'home';
       if(wantsAdmin && state.user.role !== 'admin'){history.replaceState({},'','/');toast('Admin access is restricted to administrator accounts.','error');}
@@ -622,7 +741,7 @@
     if(!confirm('Sign out of CKXchange on this device?')) return;
     try { await request('/api/auth/logout',{method:'POST',body:{}}); }
     catch(error) { toast(`Sign out failed: ${error.message}. Please try again.`, 'error'); return; }
-    state.user=null; state.balance=0; state.reservedUsdt=0; state.banks=[]; state.transactions=[]; csrfToken='';
+    state.user=null; state.balance=0; state.reservedUsdt=0; state.banks=[]; state.transactions=[]; state.notifications=[]; state.unreadNotifications=0; state.notificationPrefs={inAppEnabled:true,pushEnabled:false,pushConfigured:false}; csrfToken='';
     // A full reload clears any admin-only markup already present in the administrator document.
     window.location.replace('/');
   });
@@ -651,7 +770,7 @@
     const submit=$('sendSubmit');submit.disabled=true;
     try {
       const result=await request('/api/payouts',{method:'POST',body:{bankId,amountInr}});
-      await refreshState({quiet:true}); $('sendForm').reset(); updateSendEstimate(); openReceipt(state.transactions.find(t=>t.id===result.transaction.id)||result.transaction); toast('Payout request submitted and balance reserved. Status: Pending.');
+      await refreshState({quiet:true}); $('sendForm').reset(); updateSendEstimate(); await openReceipt(state.transactions.find(t=>t.id===result.transaction.id)||result.transaction); toast('Payout request submitted and balance reserved. Status: Pending.');
     } catch(error) {toast(error.message,'error');}
     finally {submit.disabled=false;}
   });
@@ -683,7 +802,17 @@
     finally {submit.disabled=!networkConfig.depositConfigured;}
   });
   $('historyFilter').addEventListener('change',renderHistoryTable);
-  $('downloadReceipt').addEventListener('click',async()=>{if(!currentReceipt)return;try{const latest=state.transactions.find(t=>t.id===currentReceipt.id);await downloadReceiptImage(latest||currentReceipt);toast('Payout slip downloaded as a PNG image.');}catch(error){toast(error.message,'error');}});
+  $('notificationBell').addEventListener('click', async () => { go('profile'); await loadNotifications({ quiet: true }).catch(() => {}); $('notificationPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $('refreshNotifications').addEventListener('click', async () => { try { await loadNotifications(); toast('Notifications refreshed.'); } catch (_) {} });
+  $('markAllNotificationsRead').addEventListener('click', async () => { try { await request('/api/notifications/read-all', { method: 'POST', body: {} }); await loadNotifications({ quiet: true }); toast('All notifications marked as read.'); } catch (error) { toast(error.message, 'error'); } });
+  $('notificationsInAppEnabled').addEventListener('change', async event => {
+    const checkbox = event.currentTarget; checkbox.disabled = true;
+    try { await request('/api/notifications/preferences', { method: 'PUT', body: { inAppEnabled: checkbox.checked } }); await loadNotifications({ quiet: true }); }
+    catch (error) { checkbox.checked = !checkbox.checked; toast(error.message, 'error'); }
+    finally { checkbox.disabled = false; }
+  });
+  $('togglePushNotifications').addEventListener('click', togglePushNotifications);
+  $('downloadReceipt').addEventListener('click',async()=>{if(!currentReceipt)return;try{await downloadReceiptImage(currentReceipt);toast('Payout slip downloaded as a PNG image.');}catch(error){toast(error.message,'error');}});
   $('closeReceipt').addEventListener('click',closeReceipt); $('receiptDone').addEventListener('click',closeReceipt);
   $('receiptModal').addEventListener('click',event=>{if(event.target===$('receiptModal'))closeReceipt();});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('receiptModal').classList.contains('open'))closeReceipt();});
@@ -696,5 +825,6 @@
   // Customer support username is public configuration; wallet and account data remain server-side.
   setAuthMode('login');
   updateDepositEstimate();
+  initializePwa();
   initialize();
 })();

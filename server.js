@@ -11,6 +11,7 @@ const { MongoStore } = require('connect-mongo');
 const bcrypt = require('bcryptjs');
 const { ensureIndexes, inTransaction } = require('./lib/mongo');
 const { MongoClient } = require('mongodb');
+const { getVapidConfig, hasVapidConfig, allowedPushEndpoint, sendPush } = require('./lib/web-push');
 const {
   id, now, toUsdtMicro, fromUsdtMicro, toPaise, fromPaise, safeEqual, newCsrf,
   validName, validEmail, validDepositAddress, validTransactionHash, duplicateKeyError
@@ -311,6 +312,95 @@ function paginationDto(page, pageSize, total) {
 }
 async function runTransaction(work) { return inTransaction(mongoClient, work); }
 
+function notificationId(eventKey, recipientId) { return `NTF:${eventKey}:${recipientId}`; }
+async function queueNotification(session, recipient, eventKey, kind, title, body, route) {
+  const key = notificationId(eventKey, recipient._id);
+  const created = now();
+  await db.collection('notifications').updateOne({ _id: key }, { $setOnInsert: {
+    _id: key, recipient_id: recipient._id, recipient_role: recipient.role, event_key: eventKey,
+    kind, title, body, route, read_at: null, created_at: created
+  } }, { upsert: true, session });
+  await db.collection('push_outbox').updateOne({ _id: key }, { $setOnInsert: {
+    _id: key, recipient_id: recipient._id, event_key: eventKey, title, body, route,
+    state: 'pending', attempts: 0, created_at: created, updated_at: created
+  } }, { upsert: true, session });
+  return key;
+}
+async function queueDepositAdminNotifications(session, transaction) {
+  const admins = await db.collection('users').find({ role: 'admin', status: 'active' }, { session, projection: { _id: 1, role: 1 } }).toArray();
+  const ids = [];
+  for (const admin of admins) {
+    ids.push(await queueNotification(session, admin, `deposit-request:${transaction._id}`, 'deposit_request', 'USDT deposit request', 'A new USDT deposit request needs admin review.', '/admin/deposits'));
+  }
+  return ids;
+}
+async function queuePayoutSuccessNotification(session, transaction) {
+  const owner = await db.collection('users').findOne({ _id: transaction.user_id, role: 'user', status: 'active' }, { session, projection: { _id: 1, role: 1 } });
+  if (!owner) throw new Error('USER_NOT_FOUND');
+  return [await queueNotification(session, owner, `payout-success:${transaction._id}`, 'payout_success', 'Payout successful', 'Your INR payout has been marked successful.', '/')];
+}
+async function deliverPushOutbox(notificationIds) {
+  if (!hasVapidConfig() || !Array.isArray(notificationIds) || notificationIds.length === 0) return;
+  for (const key of [...new Set(notificationIds)].slice(0, 40)) {
+    const leaseToken = crypto.randomBytes(12).toString('hex');
+    const claim = await db.collection('push_outbox').findOneAndUpdate({ _id: key, $or: [
+      { state: 'pending' }, { state: 'sending', lease_until: { $lte: now() } }
+    ] }, { $set: {
+      state: 'sending', lease_token: leaseToken,
+      lease_until: new Date(Date.now() + 30000).toISOString(), updated_at: now()
+    }, $inc: { attempts: 1 } }, { returnDocument: 'after' });
+    const outbox = claim;
+    if (!outbox) continue;
+    const finalize = async (state, extra = {}) => db.collection('push_outbox').updateOne(
+      { _id: key, state: 'sending', lease_token: leaseToken },
+      { $set: { state, updated_at: now(), ...extra }, $unset: { lease_token: '', lease_until: '' } }
+    );
+    const preference = await db.collection('notification_preferences').findOne({ _id: outbox.recipient_id });
+    if (String(outbox.event_key || '').startsWith('deposit-request:')) {
+      const activeAdmin = await db.collection('users').findOne({ _id: outbox.recipient_id, role: 'admin', status: 'active' }, { projection: { _id: 1 } });
+      if (!activeAdmin) { await finalize('skipped'); continue; }
+    }
+    if (String(outbox.event_key || '').startsWith('payout-success:')) {
+      const activeOwner = await db.collection('users').findOne({ _id: outbox.recipient_id, role: 'user', status: 'active' }, { projection: { _id: 1 } });
+      if (!activeOwner) { await finalize('skipped'); continue; }
+    }
+    if (preference?.push_enabled !== true) { await finalize('skipped'); continue; }
+    const requiredRole = String(outbox.event_key || '').startsWith('deposit-request:') ? 'admin' : 'user';
+    const subscriptions = await db.collection('push_subscriptions').find({ user_id: outbox.recipient_id, user_role: requiredRole, active: true }).limit(5).toArray();
+    if (!subscriptions.length) { await finalize('skipped'); continue; }
+    const outcomes = await Promise.all(subscriptions.map(async row => {
+      try {
+        const result = await sendPush(row.subscription, {
+          title: outbox.title,
+          body: outbox.body,
+          url: outbox.route,
+          tag: outbox.event_key
+        });
+        if (result.gone) await db.collection('push_subscriptions').deleteOne({ _id: row._id, user_id: outbox.recipient_id });
+        return { failed: false };
+      } catch (error) {
+        console.error('[push-delivery]', error?.message || error);
+        return { failed: true };
+      }
+    }));
+    await finalize(outcomes.some(result => result.failed) ? 'pending' : 'sent', { last_attempt_at: now() });
+  }
+}
+async function deliverRecentPendingPushes(userId) {
+  if (!hasVapidConfig()) return;
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const retryAfter = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const rows = await db.collection('push_outbox').find({ recipient_id: userId, created_at: { $gte: cutoff }, $or: [
+    { state: 'sending', lease_until: { $lte: now() } },
+    { state: 'pending', $or: [{ last_attempt_at: { $exists: false } }, { last_attempt_at: { $lte: retryAfter } }] }
+  ] }, { projection: { _id: 1 } }).sort({ created_at: 1 }).limit(10).toArray();
+  if (rows.length) await deliverPushOutbox(rows.map(row => row._id));
+}
+function notificationDto(row) {
+  const safeRoute = typeof row.route === 'string' && row.route.startsWith('/') && !row.route.startsWith('//') ? row.route : '/';
+  return { id: row._id, kind: row.kind, title: row.title, body: row.body, route: safeRoute, read: Boolean(row.read_at), createdAt: row.created_at };
+}
+
 // Public bootstrap and account endpoints.
 app.get('/api/health', async (req, res, next) => {
   try { await db.command({ ping: 1 }); res.json({ ok: true, database: 'mongodb', environment: IS_PROD ? 'production' : 'test', time: now() }); }
@@ -407,6 +497,11 @@ app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, n
       );
       await db.collection('ledger').updateMany({ user_id: userId }, { $set: { user_id: deletedUserRef, user_deleted: true } }, { session: mongoSession });
       await db.collection('banks').deleteMany({ user_id: userId }, { session: mongoSession });
+      // Account deletion also removes personal notification records, browser endpoints, and retry work.
+      await db.collection('notifications').deleteMany({ recipient_id: userId }, { session: mongoSession });
+      await db.collection('push_subscriptions').deleteMany({ user_id: userId }, { session: mongoSession });
+      await db.collection('push_outbox').deleteMany({ recipient_id: userId }, { session: mongoSession });
+      await db.collection('notification_preferences').deleteOne({ _id: userId }, { session: mongoSession });
       // connect-mongo versions may store the session payload as either an object or JSON text.
       const sessionsCollection = db.collection('sessions');
       const sessionJsonMatch = new RegExp(`\"userId\"\\s*:\\s*\"${escapedRegExp(userId)}\"`);
@@ -444,6 +539,94 @@ app.get('/api/support', async (req, res, next) => {
 });
 
 // Bank management: account number is encrypted; bank and branch fields come from Razorpay IFSC directory.
+app.get('/api/notifications/push-public-key', (req, res) => {
+  const config = getVapidConfig();
+  res.set('Cache-Control', 'no-store');
+  res.json({ publicKey: config?.publicText || '', configured: Boolean(config) });
+});
+app.get('/api/notifications/preferences', requireAuth, async (req, res, next) => {
+  try {
+    const [preference, subscriptionCount] = await Promise.all([
+      db.collection('notification_preferences').findOne({ _id: req.user._id }),
+      db.collection('push_subscriptions').countDocuments({ user_id: req.user._id, user_role: req.user.role, active: true })
+    ]);
+    res.set('Cache-Control', 'no-store');
+    res.json({ inAppEnabled: preference?.in_app_enabled !== false, pushEnabled: preference?.push_enabled === true && subscriptionCount > 0, pushConfigured: hasVapidConfig(), subscriptionCount });
+  } catch (error) { next(error); }
+});
+app.put('/api/notifications/preferences', requireAuth, mutationLimiter, async (req, res, next) => {
+  try {
+    if (typeof req.body?.inAppEnabled !== 'boolean') return apiError(res, 400, 'Choose whether in-app notifications are enabled.');
+    await db.collection('notification_preferences').updateOne({ _id: req.user._id }, {
+      $set: { in_app_enabled: req.body.inAppEnabled, updated_at: now() },
+      $setOnInsert: { push_enabled: false }
+    }, { upsert: true });
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+app.post('/api/notifications/subscribe', requireAuth, mutationLimiter, async (req, res, next) => {
+  try {
+    if (!hasVapidConfig()) return apiError(res, 503, 'Browser push notifications are not configured on the server yet. In-app notifications remain available.');
+    const value = req.body?.subscription;
+    if (!value || typeof value.endpoint !== 'string' || value.endpoint.length > 2048 || !allowedPushEndpoint(value.endpoint) ||
+        typeof value.keys?.p256dh !== 'string' || value.keys.p256dh.length > 256 || typeof value.keys?.auth !== 'string' || value.keys.auth.length > 128) {
+      return apiError(res, 400, 'The browser push subscription is invalid or unsupported.');
+    }
+    const endpointKey = crypto.createHash('sha256').update(value.endpoint).digest('hex');
+    await db.collection('push_subscriptions').updateOne({ _id: endpointKey }, { $set: {
+      _id: endpointKey, user_id: req.user._id, user_role: req.user.role,
+      subscription: { endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth } },
+      active: true, updated_at: now()
+    }, $setOnInsert: { created_at: now() } }, { upsert: true });
+    await db.collection('notification_preferences').updateOne({ _id: req.user._id }, {
+      $set: { push_enabled: true, updated_at: now() }, $setOnInsert: { in_app_enabled: true }
+    }, { upsert: true });
+    res.json({ ok: true, message: 'Browser push notifications enabled for this account.' });
+  } catch (error) { next(error); }
+});
+app.post('/api/notifications/unsubscribe', requireAuth, mutationLimiter, async (req, res, next) => {
+  try {
+    await Promise.all([
+      db.collection('push_subscriptions').deleteMany({ user_id: req.user._id }),
+      db.collection('notification_preferences').updateOne({ _id: req.user._id }, { $set: { push_enabled: false, updated_at: now() }, $setOnInsert: { in_app_enabled: true } }, { upsert: true })
+    ]);
+    res.json({ ok: true, message: 'Browser push notifications disabled for this account.' });
+  } catch (error) { next(error); }
+});
+app.get('/api/notifications', requireAuth, async (req, res, next) => {
+  try {
+    await deliverRecentPendingPushes(req.user._id);
+    const preference = await db.collection('notification_preferences').findOne({ _id: req.user._id });
+    if (preference?.in_app_enabled === false) return res.json({ notifications: [], unreadCount: 0, inAppEnabled: false });
+    const filter = { recipient_id: req.user._id, recipient_role: req.user.role };
+    // An account that was demoted from admin must not retain visibility of historic admin-only alerts.
+    if (req.user.role !== 'admin') filter.kind = { $ne: 'deposit_request' };
+    const [rows, unreadCount] = await Promise.all([
+      db.collection('notifications').find(filter).sort({ created_at: -1 }).limit(50).toArray(),
+      db.collection('notifications').countDocuments({ ...filter, read_at: null })
+    ]);
+    res.set('Cache-Control', 'no-store');
+    res.json({ notifications: rows.map(notificationDto), unreadCount, inAppEnabled: true });
+  } catch (error) { next(error); }
+});
+app.post('/api/notifications/read-all', requireAuth, mutationLimiter, async (req, res, next) => {
+  try {
+    const filter = { recipient_id: req.user._id, recipient_role: req.user.role, read_at: null };
+    if (req.user.role !== 'admin') filter.kind = { $ne: 'deposit_request' };
+    const result = await db.collection('notifications').updateMany(filter, { $set: { read_at: now() } });
+    res.json({ ok: true, updated: result.modifiedCount });
+  } catch (error) { next(error); }
+});
+app.post('/api/notifications/:id/read', requireAuth, mutationLimiter, async (req, res, next) => {
+  try {
+    const filter = { _id: req.params.id, recipient_id: req.user._id, recipient_role: req.user.role, read_at: null };
+    if (req.user.role !== 'admin') filter.kind = { $ne: 'deposit_request' };
+    const result = await db.collection('notifications').updateOne(filter, { $set: { read_at: now() } });
+    if (!result.matchedCount) return apiError(res, 404, 'Notification was not found for this account.');
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
 app.get('/api/banks', requireAuth, async (req, res, next) => {
   try { const banks = await db.collection('banks').find({ user_id: req.user._id }).sort({ created_at: -1 }).toArray(); res.json({ banks: banks.map(bankDto) }); }
   catch (error) { next(error); }
@@ -525,6 +708,15 @@ app.get('/api/transactions', requireAuth, async (req, res, next) => {
   try { const rows = await db.collection('transactions').find({ user_id: req.user._id }).sort({ created_at: -1 }).limit(500).toArray(); res.json({ transactions: rows.map(row => transactionDto(row)) }); }
   catch (error) { next(error); }
 });
+app.get('/api/payouts/:id/receipt', requireAuth, async (req, res, next) => {
+  try {
+    // Full bank account details are returned only after checking the payout belongs to this session user.
+    const txn = await db.collection('transactions').findOne({ _id: req.params.id, user_id: req.user._id, type: 'payout' });
+    if (!txn) return apiError(res, 404, 'Payout receipt was not found for this account.');
+    res.set('Cache-Control', 'no-store');
+    res.json({ transaction: transactionDto(txn, true) });
+  } catch (error) { next(error); }
+});
 app.post('/api/deposits', requireAuth, mutationLimiter, async (req, res, next) => {
   try {
     const amount = Number(req.body?.amountUsdt);
@@ -545,11 +737,13 @@ app.post('/api/deposits', requireAuth, mutationLimiter, async (req, res, next) =
     const transaction = { _id: txId, user_id: req.user._id, type: 'deposit', status: 'pending', amount_paise: amountPaise, usdt_micro: usdtMicro,
       network, tx_hash: txHash, deposit_address: depositAddress.address, created_at: created, updated_at: created };
     try {
-      await runTransaction(async mongoSession => {
+      const notificationIds = await runTransaction(async mongoSession => {
         const active = await db.collection('users').updateOne({ _id: req.user._id, role: 'user', status: 'active' }, { $inc: { activity_seq: 1 } }, { session: mongoSession });
         if (active.modifiedCount !== 1) throw new Error('ACCOUNT_NOT_ACTIVE');
         await db.collection('transactions').insertOne(transaction, { session: mongoSession });
+        return queueDepositAdminNotifications(mongoSession, transaction);
       });
+      await deliverPushOutbox(notificationIds).catch(error => console.error('[push-outbox]', error?.message || error));
     } catch (error) {
       if (duplicateKeyError(error)) return apiError(res, 409, 'This transaction hash has already been submitted for this network.');
       if (error.message === 'ACCOUNT_NOT_ACTIVE') return apiError(res, 409, 'Your account is not active. Please sign in again.');
@@ -703,6 +897,7 @@ app.post('/api/admin/payouts/:id/complete', mutationLimiter, async (req, res, ne
   try {
     const reference = String(req.body?.bankReference || '').trim();
     if (reference.length < 3 || reference.length > 120) return apiError(res, 400, 'Enter the bank/provider reference for the completed transfer.');
+    let notificationIds = [];
     const transaction = await runTransaction(async mongoSession => {
       const txn = await db.collection('transactions').findOne({ _id: req.params.id, type: 'payout' }, { session: mongoSession });
       if (!txn) throw new Error('NOT_FOUND');
@@ -713,8 +908,10 @@ app.post('/api/admin/payouts/:id/complete', mutationLimiter, async (req, res, ne
       if (release.modifiedCount !== 1) throw new Error('RESERVE_MISMATCH');
       await db.collection('ledger').insertOne({ _id: `${txn._id}:payout_paid`, user_id: txn.user_id, transaction_id: txn._id, entry_type: 'payout_paid', available_delta_micro: 0, reserved_delta_micro: -txn.usdt_micro, created_at: now() }, { session: mongoSession });
       await audit(req.user._id, 'payout_marked_success_after_reference', txn._id, { bankReference: reference }, mongoSession);
+      notificationIds = await queuePayoutSuccessNotification(mongoSession, { ...txn, status: 'success' });
       return { ...txn, status: 'success', bank_reference: reference, updated_at: now() };
     });
+    await deliverPushOutbox(notificationIds).catch(error => console.error('[push-outbox]', error?.message || error));
     res.json({ transaction: transactionDto(transaction) });
   } catch (error) {
     if (error.message === 'NOT_FOUND') return apiError(res, 404, 'Payout request not found.');
