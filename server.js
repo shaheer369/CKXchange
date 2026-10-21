@@ -22,6 +22,8 @@ app.disable('x-powered-by');
 const PORT = Number(process.env.PORT || 3000);
 const APP_ORIGIN = String(process.env.APP_ORIGIN || '').trim().replace(/\/+$/, '');
 const RATE_DEFAULT = Number(process.env.INR_PER_USDT || 106);
+const MIN_DEPOSIT_USDT = 10;
+const MIN_PAYOUT_INR = 1000;
 const IS_PROD = process.env.NODE_ENV === 'production';
 const MONGODB_URI = String(process.env.MONGODB_URI || '').trim();
 const DB_NAME = String(process.env.MONGODB_DB || 'ckxchange').trim();
@@ -94,7 +96,10 @@ app.use(async (req, res, next) => {
 });
 
 // MongoDB is the source of truth for both application data and login sessions.
+// Rolling cookie/store TTL keep an active user signed in for up to 10 days.
 // MongoDB Atlas (replica set) is recommended because payouts and deposit approvals use transactions.
+const SESSION_TTL_SECONDS = 10 * 24 * 60 * 60;
+const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
 function installSessionMiddleware(clientPromise) {
   app.use(session({
     name: 'ckx.sid',
@@ -102,14 +107,15 @@ function installSessionMiddleware(clientPromise) {
       clientPromise,
       dbName: DB_NAME,
       collectionName: 'sessions',
-      ttl: 8 * 60 * 60,
+      ttl: SESSION_TTL_SECONDS,
+      touchAfter: 0,
       autoRemove: 'native'
     }),
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     rolling: true,
-    cookie: { httpOnly: true, sameSite: 'lax', secure: IS_PROD, maxAge: 8 * 60 * 60 * 1000, path: '/' }
+    cookie: { httpOnly: true, sameSite: 'lax', secure: IS_PROD, maxAge: SESSION_TTL_MS, path: '/' }
   }));
 }
 installSessionMiddleware(mongoClientPromise);
@@ -236,6 +242,7 @@ function auditSafeUser(user) {
     availableUsdt: fromUsdtMicro(user.available_usdt_micro), reservedUsdt: fromUsdtMicro(user.reserved_usdt_micro), createdAt: user.created_at };
 }
 function regenerateSession(req) { return new Promise((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve())); }
+function saveSession(req) { return new Promise((resolve, reject) => req.session.save(error => error ? reject(error) : resolve())); }
 
 // Store account numbers encrypted with AES-256-GCM; the key never lives in MongoDB.
 function encryptAccount(account) {
@@ -362,6 +369,12 @@ async function queueDepositAdminNotifications(session, transaction) {
   }
   return ids;
 }
+async function queueDepositApprovedNotification(session, transaction) {
+  const owner = await db.collection('users').findOne({ _id: transaction.user_id, role: { $in: ['user', 'admin'] }, status: 'active' }, { session, projection: { _id: 1, role: 1 } });
+  if (!owner) throw new Error('USER_NOT_FOUND');
+  const body = `Your deposit of ${notificationUsdt(transaction.usdt_micro)} USDT (≈ ₹${notificationInr(transaction.amount_paise)}) has been approved and credited to your CKXchange balance.`;
+  return [await queueNotification(session, owner, `deposit-approved:${transaction._id}`, 'deposit_approved', 'USDT deposit approved', body, '/')];
+}
 async function queuePayoutSuccessNotification(session, transaction) {
   const owner = await db.collection('users').findOne({ _id: transaction.user_id, role: { $in: ['user', 'admin'] }, status: 'active' }, { session, projection: { _id: 1, role: 1 } });
   if (!owner) throw new Error('USER_NOT_FOUND');
@@ -463,6 +476,7 @@ app.post('/api/auth/register', authLimiter, async (req, res, next) => {
     catch (error) { if (duplicateKeyError(error)) return apiError(res, 409, 'An account with this email already exists.'); throw error; }
     await regenerateSession(req);
     req.session.userId = userId; req.session.csrfToken = newCsrf();
+    await saveSession(req);
     res.status(201).json({ user: userDto(document), csrfToken: req.session.csrfToken });
   } catch (error) { next(error); }
 });
@@ -476,6 +490,7 @@ app.post('/api/auth/login', authLimiter, async (req, res, next) => {
     if (!user || !validPassword || user.status !== 'active') return apiError(res, 401, 'Email or password is incorrect, or the account is disabled.');
     await regenerateSession(req);
     req.session.userId = user._id; req.session.csrfToken = newCsrf();
+    await saveSession(req);
     res.json({ user: userDto(user), csrfToken: req.session.csrfToken });
   } catch (error) { next(error); }
 });
@@ -785,7 +800,7 @@ app.post('/api/deposits', requireAuth, mutationLimiter, async (req, res, next) =
     const amount = Number(req.body?.amountUsdt);
     const network = String(req.body?.network || '').toUpperCase();
     let txHash = String(req.body?.txHash || '').trim();
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000_000) return apiError(res, 400, 'Enter a deposit amount greater than zero and within the transaction limit.');
+    if (!Number.isFinite(amount) || amount < MIN_DEPOSIT_USDT || amount > 10_000_000) return apiError(res, 400, 'Minimum USDT deposit is 10 USDT. Enter an amount from 10 USDT up to the transaction limit.');
     if (network !== 'TRC20') return apiError(res, 400, 'Only USDT on TRON (TRC20) is supported.');
     if (!validTransactionHash(network, txHash)) return apiError(res, 400, 'Enter a valid 64-character hexadecimal TRC20 transaction hash.');
     const depositAddress = await effectiveDepositAddress(network);
@@ -821,7 +836,7 @@ app.post('/api/payouts', requireAuth, mutationLimiter, async (req, res, next) =>
   try {
     const amount = Number(req.body?.amountInr);
     const bankId = String(req.body?.bankId || '');
-    if (!Number.isFinite(amount) || amount < 1 || amount > 100_000_000) return apiError(res, 400, 'Enter a valid INR payout amount.');
+    if (!Number.isFinite(amount) || amount < MIN_PAYOUT_INR || amount > 100_000_000) return apiError(res, 400, 'Minimum INR withdrawal is ₹1,000. Enter a payout amount from ₹1,000 up to the transaction limit.');
     const bank = await db.collection('banks').findOne({ _id: bankId, user_id: req.user._id });
     if (!bank) return apiError(res, 400, 'Choose a saved bank account.');
     const amountPaise = toPaise(amount);
@@ -916,23 +931,28 @@ app.get('/api/admin/audit', async (req, res, next) => {
 });
 app.post('/api/admin/deposits/:id/approve', mutationLimiter, async (req, res, next) => {
   try {
-    const transaction = await runTransaction(async mongoSession => {
+    const result = await runTransaction(async mongoSession => {
       const transactions = db.collection('transactions');
       const txn = await transactions.findOne({ _id: req.params.id, type: 'deposit' }, { session: mongoSession });
       if (!txn) throw new Error('NOT_FOUND');
       if (txn.status !== 'pending') throw new Error('NOT_PENDING');
-      const changed = await transactions.updateOne({ _id: txn._id, type: 'deposit', status: 'pending' }, { $set: { status: 'success', updated_at: now() } }, { session: mongoSession });
+      const updatedAt = now();
+      const changed = await transactions.updateOne({ _id: txn._id, type: 'deposit', status: 'pending' }, { $set: { status: 'success', updated_at: updatedAt } }, { session: mongoSession });
       if (changed.modifiedCount !== 1) throw new Error('NOT_PENDING');
-      const credit = await db.collection('users').updateOne({ _id: txn.user_id }, { $inc: { available_usdt_micro: txn.usdt_micro } }, { session: mongoSession });
+      const credit = await db.collection('users').updateOne({ _id: txn.user_id, status: 'active' }, { $inc: { available_usdt_micro: txn.usdt_micro } }, { session: mongoSession });
       if (credit.matchedCount !== 1) throw new Error('USER_NOT_FOUND');
-      await db.collection('ledger').insertOne({ _id: `${txn._id}:deposit_credit`, user_id: txn.user_id, transaction_id: txn._id, entry_type: 'deposit_credit', available_delta_micro: txn.usdt_micro, reserved_delta_micro: 0, created_at: now() }, { session: mongoSession });
+      await db.collection('ledger').insertOne({ _id: `${txn._id}:deposit_credit`, user_id: txn.user_id, transaction_id: txn._id, entry_type: 'deposit_credit', available_delta_micro: txn.usdt_micro, reserved_delta_micro: 0, created_at: updatedAt }, { session: mongoSession });
       await audit(req.user._id, 'deposit_approved_manual_verification', txn._id, { network: txn.network, txHash: txn.tx_hash, amountUsdt: fromUsdtMicro(txn.usdt_micro) }, mongoSession);
-      return { ...txn, status: 'success', updated_at: now() };
+      const transaction = { ...txn, status: 'success', updated_at: updatedAt };
+      const notificationIds = await queueDepositApprovedNotification(mongoSession, transaction);
+      return { transaction, notificationIds };
     });
-    res.json({ transaction: transactionDto(transaction) });
+    await deliverPushOutbox(result.notificationIds).catch(error => console.error('[push-outbox]', error?.message || error));
+    res.json({ transaction: transactionDto(result.transaction) });
   } catch (error) {
     if (error.message === 'NOT_FOUND') return apiError(res, 404, 'Deposit request not found.');
     if (error.message === 'NOT_PENDING') return apiError(res, 409, 'Deposit has already been reviewed.');
+    if (error.message === 'USER_NOT_FOUND') return apiError(res, 409, 'The deposit owner is no longer active; no credit was applied.');
     next(error);
   }
 });

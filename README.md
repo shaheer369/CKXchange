@@ -259,3 +259,11 @@ If the VAPID variables are absent or invalid, in-app history and unread counts c
 - Notification history/read endpoints filter by the signed-in recipient. Push subscriptions are associated with the current MongoDB user and their server-verified role. Duplicate database events use deterministic IDs, and push display tags prevent duplicate alerts from stacking.
 
 The full account number on a payout slip is returned by a dedicated no-cache endpoint only after confirming that the payout belongs to the signed-in account. PNG slips now include the full number as requested; downloaded slips can contain sensitive bank details, so share them carefully.
+
+## v2.4.0 behavior changes
+
+- Payouts require a review confirmation before submission; the server reserves USDT only after confirmation.
+- Active rolling sessions last up to 10 days. A user with an already-issued 8-hour cookie may need to sign in once after deploying this update.
+- Minimum deposit is 10 USDT and minimum payout is ₹1,000; both are enforced in frontend and backend.
+- Deposit approval creates a deduplicated notification for the active deposit owner after balance credit is committed.
+- Customer transaction history has three columns: Transaction, Amount, Status; date/time and a payout slip link appear under the transaction ID, avoiding horizontal scrolling.

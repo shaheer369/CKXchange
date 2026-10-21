@@ -49,6 +49,9 @@ async function login(origin, email, password) {
   const csrf = await api(origin, '/api/auth/csrf');
   const result = await api(origin, '/api/auth/login', { method: 'POST', cookie: csrf.cookie, csrf: csrf.data.csrfToken, body: { email, password } });
   assert.equal(result.response.status, 200, `login failed: ${JSON.stringify(result.data)}`);
+  const cookieHeaders = typeof result.response.headers.getSetCookie === 'function' ? result.response.headers.getSetCookie().join('; ') : (result.response.headers.get('set-cookie') || '');
+  assert.match(cookieHeaders, /max-age=864000/i, 'login session cookie must use a rolling 10-day lifetime');
+  assert.equal((await api(origin, '/api/auth/me', { cookie: result.cookie })).response.status, 200, 'login session should be persisted before the login response completes');
   return { cookie: result.cookie, csrf: result.data.csrfToken, user: result.data.user };
 }
 async function waitForStart(proc, origin) {
@@ -91,7 +94,7 @@ async function waitForStart(proc, origin) {
   assert.equal(manifest.response.status, 200, 'PWA manifest should be served');
   assert.match(manifest.text, /\"display\": \"standalone\"/, 'PWA should use an installable standalone display mode');
   assert.match(manifest.text, /ckx-logo-512\.png/, 'PWA manifest should use the CKX brand logo');
-  const logoResponse = await fetch(`${origin}/icons/ckx-logo-192.png?v=2.3.0`);
+  const logoResponse = await fetch(`${origin}/icons/ckx-logo-192.png?v=2.4.0`);
   assert.equal(logoResponse.status, 200, 'CKX PWA logo must be served as a static asset');
   assert.match(logoResponse.headers.get('content-type') || '', /image\/png/, 'CKX PWA logo must be served as PNG');
   const serviceWorker = await api(origin, '/service-worker.js');
@@ -167,12 +170,14 @@ async function waitForStart(proc, origin) {
   assert.equal((await api(origin, '/api/config?network=ERC20')).response.status, 400, 'non-TRC20 network should be rejected');
   assert.equal((await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 5, network: 'ERC20', txHash: 'c'.repeat(64) } })).response.status, 400, 'API must reject unsupported deposit network');
   assert.equal((await api(origin, '/api/admin/settings/deposits', { method: 'PUT', cookie: admin.cookie, csrf: admin.csrf, body: { address: trc20Address, rate: -1 } })).response.status, 400, 'invalid rate must be rejected');
+  const belowMinimumDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 9.999999, network: 'TRC20', txHash: 'b'.repeat(64) } });
+  assert.equal(belowMinimumDeposit.response.status, 400, 'USDT deposits below 10 must be rejected by the server');
 
-  const deposit = await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 5, network: 'TRC20', txHash: 'a'.repeat(64) } });
+  const deposit = await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: 'a'.repeat(64) } });
   assert.equal(deposit.response.status, 201, `deposit creation failed: ${JSON.stringify(deposit.data)}`);
   assert.equal(deposit.data.transaction.status, 'pending');
   assert.equal(deposit.data.transaction.depositAddress, trc20Address);
-  assert.equal(deposit.data.transaction.amount, 550, 'deposit valuation must use admin rate');
+  assert.equal(deposit.data.transaction.amount, 1100, 'deposit valuation must use admin rate');
   const adminDepositNotes = await api(origin, '/api/notifications', { cookie: admin.cookie });
   assert.equal(adminDepositNotes.response.status, 200);
   const depositNote = adminDepositNotes.data.notifications.find(row => row.kind === 'deposit_request' && row.body.includes('deposit request'));
@@ -193,8 +198,12 @@ async function waitForStart(proc, origin) {
   const approval = await api(origin, `/api/admin/deposits/${deposit.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} });
   assert.equal(approval.response.status, 200, `deposit approval failed: ${JSON.stringify(approval.data)}`);
   assert.equal((await api(origin, `/api/admin/deposits/${deposit.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 409, 'deposit must not be credited twice');
-  assert.equal((await api(origin, '/api/state', { cookie: customer.cookie })).data.user.availableUsdt, 5, 'deposit must credit wallet once');
-  assert.equal((await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 5, network: 'TRC20', txHash: 'A'.repeat(64) } })).response.status, 409, 'hash duplicates must be case-insensitive');
+  assert.equal((await api(origin, '/api/state', { cookie: customer.cookie })).data.user.availableUsdt, 10, 'deposit must credit wallet once');
+  const approvedCustomerNotes = await api(origin, '/api/notifications', { cookie: customer.cookie });
+  const approvedDepositNote = approvedCustomerNotes.data.notifications.find(row => row.kind === 'deposit_approved' && row.body.includes('10 USDT') && row.body.includes('₹1,100.00'));
+  assert.ok(approvedDepositNote, 'the deposit owner must be notified when their USDT deposit is approved and credited');
+  assert.equal((await api(origin, '/api/notifications', { cookie: admin.cookie })).data.notifications.some(row => row.kind === 'deposit_approved' && row.body.includes('10 USDT') && row.body.includes('₹1,100.00')), false, 'customer deposit approval notification must not be disclosed to an unrelated admin');
+  assert.equal((await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: 'A'.repeat(64) } })).response.status, 409, 'hash duplicates must be case-insensitive');
   const blockedDeletion = await api(origin, '/api/account/delete', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { password: 'SmokeCustomer12345', confirmation: 'DELETE' } });
   assert.equal(blockedDeletion.response.status, 409, 'account deletion must be blocked while an available USDT balance remains');
   assert.equal((await api(origin, '/api/auth/me', { cookie: customer.cookie })).response.status, 200, 'a blocked deletion must restore the customer account to active');
@@ -206,51 +215,58 @@ async function waitForStart(proc, origin) {
   const bankEncryptedData = Buffer.concat([bankCipher.update(expectedFullAccount, 'utf8'), bankCipher.final()]);
   const validAccountCipher = JSON.stringify({ iv: bankIv.toString('base64'), tag: bankCipher.getAuthTag().toString('base64'), data: bankEncryptedData.toString('base64') });
   await testDb.collection('banks').insertOne({ _id: 'BNK-SMOKE-001', user_id: registration.data.user.id, holder: 'TEST CUSTOMER', account_cipher: validAccountCipher, account_fingerprint: 'smoke-fingerprint', account_last4: expectedFullAccount.slice(-4), ifsc: 'TEST0123456', bank_name: 'Smoke Bank', branch_name: 'Smoke Branch', created_at: new Date().toISOString() });
-  const tooLargePayout = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 636 } });
+  const tooSmallPayout = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 999.99 } });
+  assert.equal(tooSmallPayout.response.status, 400, 'INR withdrawals below ₹1,000 must be rejected by the server');
+  const tooLargePayout = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 1200 } });
   assert.equal(tooLargePayout.response.status, 409, 'payout exceeding available balance must be rejected');
-  const payout = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 110 } });
+
+  // A rejected minimum-size request releases its reserved funds for a later payout.
+  const rejected = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 1000 } });
+  assert.equal(rejected.response.status, 201, `payout request for rejection test failed: ${JSON.stringify(rejected.data)}`);
+  assert.equal(rejected.data.transaction.account, `•••• ${expectedFullAccount.slice(-4)}`, 'ordinary payout response must continue to mask account numbers');
+  assert.equal((await api(origin, `/api/admin/payouts/${rejected.data.transaction.id}/reject`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { reason: 'Smoke test rejection' } })).response.status, 200);
+  let state = await api(origin, '/api/state', { cookie: customer.cookie });
+  assert.equal(state.data.user.availableUsdt, 10, 'rejecting a payout must return reserved funds');
+  assert.equal(state.data.user.reservedUsdt, 0, 'rejected payout must not keep reserved funds');
+
+  const payout = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 1000 } });
   assert.equal(payout.response.status, 201, `payout request failed: ${JSON.stringify(payout.data)}`);
-  assert.equal(payout.data.transaction.account, `•••• ${expectedFullAccount.slice(-4)}`, 'ordinary payout response must continue to mask account numbers');
   const customerReceipt = await api(origin, `/api/payouts/${encodeURIComponent(payout.data.transaction.id)}/receipt`, { cookie: customer.cookie });
   assert.equal(customerReceipt.response.status, 200, 'payout owner should be able to retrieve the payout receipt');
   assert.equal(customerReceipt.data.transaction.account, expectedFullAccount, 'owner-scoped payout receipt should include the full account number');
   const adminReceipt = await api(origin, `/api/payouts/${encodeURIComponent(payout.data.transaction.id)}/receipt`, { cookie: admin.cookie });
   assert.equal(adminReceipt.response.status, 404, 'other accounts including admins must not use the owner-only receipt endpoint');
-  let state = await api(origin, '/api/state', { cookie: customer.cookie });
-  assert.equal(state.data.user.availableUsdt, 4);
-  assert.equal(state.data.user.reservedUsdt, 1);
+  state = await api(origin, '/api/state', { cookie: customer.cookie });
+  assert.ok(Math.abs(state.data.user.availableUsdt - 0.90909) < 0.000001, 'payout should reserve the correctly rounded USDT amount');
+  assert.ok(Math.abs(state.data.user.reservedUsdt - 9.09091) < 0.000001, 'payout reserve should match the requested INR at the configured rate');
   assert.equal((await api(origin, `/api/admin/payouts/${payout.data.transaction.id}/approve`, { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: {} })).response.status, 403, 'normal users cannot approve payouts');
   assert.equal((await api(origin, `/api/admin/payouts/${payout.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 200);
   assert.equal((await api(origin, `/api/admin/payouts/${payout.data.transaction.id}/complete`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankReference: '' } })).response.status, 400, 'successful payout requires reference');
   assert.equal((await api(origin, `/api/admin/payouts/${payout.data.transaction.id}/complete`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankReference: 'SMOKE-BANK-REF-123' } })).response.status, 200);
   assert.equal((await api(origin, `/api/admin/payouts/${payout.data.transaction.id}/complete`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankReference: 'SMOKE-BANK-REF-123' } })).response.status, 409, 'payout must not complete twice');
   const payoutSuccessNotes = await api(origin, '/api/notifications', { cookie: customer.cookie });
-  const payoutSuccessNote = payoutSuccessNotes.data.notifications.find(row => row.kind === 'payout_success' && row.body.includes('₹110.00') && row.body.includes(`ending ${expectedFullAccount.slice(-4)}`));
+  const payoutSuccessNote = payoutSuccessNotes.data.notifications.find(row => row.kind === 'payout_success' && row.body.includes('₹1,000.00') && row.body.includes(`ending ${expectedFullAccount.slice(-4)}`));
   assert.ok(payoutSuccessNote, 'successful payout should notify its owner with amount and last four bank digits');
   const adminAfterPayoutNotes = await api(origin, '/api/notifications', { cookie: admin.cookie });
-  assert.equal(adminAfterPayoutNotes.data.notifications.some(row => row.kind === 'payout_success'), false, 'payout success notification must not be disclosed to admins');
+  assert.equal(adminAfterPayoutNotes.data.notifications.some(row => row.kind === 'payout_success' && row.eventKey === `payout-success:${payout.data.transaction.id}`), false, 'payout success notification must not be disclosed to admins');
   assert.equal((await api(origin, `/api/notifications/${encodeURIComponent(payoutSuccessNote.id)}/read`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 404, 'admins must not mark a customer notification as read');
-  const rejected = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 110 } });
-  assert.equal(rejected.response.status, 201);
-  assert.equal((await api(origin, `/api/admin/payouts/${rejected.data.transaction.id}/reject`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { reason: 'Smoke test rejection' } })).response.status, 200);
   state = await api(origin, '/api/state', { cookie: customer.cookie });
-  assert.equal(state.data.user.availableUsdt, 4);
+  assert.ok(Math.abs(state.data.user.availableUsdt - 0.90909) < 0.000001);
   assert.equal(state.data.user.reservedUsdt, 0);
-
   // The administrator can also use their own customer-facing bank/deposit/payout endpoints.
-  const adminDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { amountUsdt: 2, network: 'TRC20', txHash: 'd'.repeat(64) } });
+  const adminDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: 'd'.repeat(64) } });
   assert.equal(adminDeposit.response.status, 201, `active admin deposit submission failed: ${JSON.stringify(adminDeposit.data)}`);
-  const adminDepositNote = (await api(origin, '/api/notifications', { cookie: admin.cookie })).data.notifications.find(row => row.kind === 'deposit_request' && row.body.includes('2 USDT') && row.body.includes('₹220.00'));
+  const adminDepositNote = (await api(origin, '/api/notifications', { cookie: admin.cookie })).data.notifications.find(row => row.kind === 'deposit_request' && row.body.includes('10 USDT') && row.body.includes('₹1,100.00'));
   assert.ok(adminDepositNote, 'deposit notifications should include USDT amount and INR valuation');
   assert.equal((await api(origin, `/api/admin/deposits/${encodeURIComponent(adminDeposit.data.transaction.id)}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 200, 'admin deposit should be approvable by an admin');
   const adminBank = await api(origin, '/api/banks', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { holder: 'SMOKE ADMIN', account: '9876543210007654', ifsc: 'TEST0123456' } });
   assert.equal(adminBank.response.status, 201, `active admin bank account creation failed: ${JSON.stringify(adminBank.data)}`);
-  const adminPayout = await api(origin, '/api/payouts', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankId: adminBank.data.bank.id, amountInr: 110 } });
+  const adminPayout = await api(origin, '/api/payouts', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankId: adminBank.data.bank.id, amountInr: 1000 } });
   assert.equal(adminPayout.response.status, 201, `active admin payout submission failed: ${JSON.stringify(adminPayout.data)}`);
   assert.equal((await api(origin, `/api/admin/payouts/${encodeURIComponent(adminPayout.data.transaction.id)}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} })).response.status, 200, "admin payout should be approvable");
   assert.equal((await api(origin, `/api/admin/payouts/${encodeURIComponent(adminPayout.data.transaction.id)}/complete`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { bankReference: 'ADMIN-SMOKE-REF' } })).response.status, 200, "admin payout should be completable");
   const adminPayoutNotes = await api(origin, '/api/notifications', { cookie: admin.cookie });
-  assert.ok(adminPayoutNotes.data.notifications.some(row => row.kind === 'payout_success' && row.body.includes('₹110.00') && row.body.includes('ending 7654')), "admin successful payout notification should include amount and bank last four digits");
+  assert.ok(adminPayoutNotes.data.notifications.some(row => row.kind === 'payout_success' && row.body.includes('₹1,000.00') && row.body.includes('ending 7654')), "admin successful payout notification should include amount and bank last four digits");
 
   // Exercise account deletion against a disposable account with no balances or open requests.
   const deletionCsrf = await api(origin, '/api/auth/csrf');

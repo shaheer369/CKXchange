@@ -6,6 +6,7 @@
   let csrfToken = '';
   let authMode = 'login';
   let currentReceipt = null;
+  let pendingPayoutReview = null;
   let ifscRequestVersion = 0;
   let ifscTimer = null;
   let addBankReturnPage = 'send';
@@ -110,15 +111,21 @@
   }
   async function refreshCsrf() {
     const response = await fetch('/api/auth/csrf', { credentials:'same-origin', cache:'no-store' });
-    const data = await response.json(); csrfToken = data.csrfToken || ''; return csrfToken;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { const error = new Error(data.error || `Could not restore the CKXchange session (${response.status}).`); error.status = response.status; throw error; }
+    csrfToken = data.csrfToken || '';
+    return csrfToken;
   }
   function showAuth() {
-    $('authOverlay').hidden = false; document.body.classList.add('auth-pending');
+    $('authOverlay').hidden = false; document.body.classList.remove('auth-restoring'); document.body.classList.add('auth-pending');
+    $('authTitle').textContent = 'Sign in to CKXchange';
+    const authCopy = $('authCopy'); if (authCopy) authCopy.textContent = 'Your account and transaction records are stored on the CKXchange server.';
+    if ($('authRetryButton')) $('authRetryButton').hidden = true;
     if (pollHandle) clearInterval(pollHandle);
     pollHandle = null;
   }
   function showApplication() {
-    $('authOverlay').hidden = true; document.body.classList.remove('auth-pending');
+    $('authOverlay').hidden = true; document.body.classList.remove('auth-pending', 'auth-restoring');
     const admin = state.user?.role === 'admin';
     const desktopAdminNav = $('adminNav'); if (desktopAdminNav) desktopAdminNav.hidden = !admin;
     const mobileAdminNav = $('adminMobileNav'); if (mobileAdminNav) mobileAdminNav.hidden = !admin;
@@ -144,7 +151,7 @@
     $('authNameField').hidden = authMode !== 'register'; $('authConfirmField').hidden = authMode !== 'register';
     $('authName').required = authMode === 'register'; $('authConfirm').required = authMode === 'register';
     $('authPassword').autocomplete = authMode === 'register' ? 'new-password' : 'current-password';
-    $('authTitle').textContent = authMode === 'register' ? 'Create your account' : 'Sign in to CKXchange';
+    if (!document.body.classList.contains('auth-restoring')) $('authTitle').textContent = authMode === 'register' ? 'Create your account' : 'Sign in to CKXchange';
     $('authSubmit').textContent = authMode === 'register' ? 'Create account' : 'Sign in';
     $('authAlert').style.color = '#f0d49a';
     $('authAlert').textContent = authMode === 'register'
@@ -299,10 +306,30 @@
     catch (_) { renderSupportContact(''); }
   }
 
+  let initializeRunning = false;
   async function initialize() {
+    if (initializeRunning) return;
+    initializeRunning = true;
+    const retryButton = $('authRetryButton');
+    if (retryButton) retryButton.hidden = true;
+    $('authOverlay').hidden = false;
+    document.body.classList.add('auth-pending', 'auth-restoring');
+    $('authTitle').textContent = 'Restoring your session…';
+    $('authCopy').textContent = 'Checking your saved sign-in securely. Please wait a moment.';
     try {
-      await refreshCsrf();
-      const auth = await request('/api/auth/me');
+      let auth;
+      // Serverless cold starts / temporary Atlas delay should not expose the sign-in form
+      // while the existing cookie may still be valid.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await refreshCsrf();
+          auth = await request('/api/auth/me');
+          break;
+        } catch (error) {
+          if (error.status === 401 || attempt === 2) throw error;
+          await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+        }
+      }
       state.user = auth.user;
       showApplication();
       await refreshState({ quiet:true });
@@ -318,8 +345,19 @@
       // If an admin document was loaded but the session is no longer valid, reload the
       // customer route so the server sends the sanitized non-admin shell.
       if (error.status === 401 && $('page-admin')) { window.location.replace('/'); return; }
-      showAuth();
-      if (error.status !== 401) $('authAlert').textContent = `${error.message} Ensure the CKXchange backend server is running.`;
+      if (error.status === 401) {
+        showAuth();
+      } else {
+        // Do not turn a temporary network / server error into a misleading logout.
+        document.body.classList.add('auth-pending', 'auth-restoring');
+        $('authOverlay').hidden = false;
+        $('authTitle').textContent = 'Unable to restore your session';
+        $('authCopy').textContent = 'CKXchange could not verify your sign-in. Check your connection and retry; your account has not been signed out.';
+        if (retryButton) retryButton.hidden = false;
+        const authAlert = $('authAlert'); if (authAlert) authAlert.textContent = error.message || 'The server is temporarily unavailable.';
+      }
+    } finally {
+      initializeRunning = false;
     }
   }
   async function refreshState({ quiet = false } = {}) {
@@ -425,10 +463,13 @@
     $('historyCaption').textContent = `${txs.length} record${txs.length === 1 ? '' : 's'} · statuses update after review`;
     $('historyRows').innerHTML = txs.map(t => {
       const isPayout = t.type === 'payout';
-      const transactionRef = isPayout ? `<button type="button" class="transaction-slip-link" data-view-transaction="${safe(t.id)}" aria-label="View payout slip ${safe(t.id)}">${safe(t.id)} · View slip ↗</button>` : `<div class="table-sub">${safe(t.id)}</div>`;
-      const amount = money(t.amount);
-      const amountLabel = isPayout ? 'Requested payout' : 'Claimed deposit value';
-      return `<tr><td><div class="table-main">${isPayout ? 'INR payout' : 'USDT deposit'}</div>${transactionRef}${t.rejectionReason ? `<div class="table-sub">Reason: ${safe(t.rejectionReason)}</div>` : ''}</td><td>${safe(dateShort(t.timestamp))}<div class="table-sub">${safe(new Intl.DateTimeFormat('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}).format(new Date(t.timestamp)))}</div></td><td><div class="table-main">${amount}</div><div class="table-sub">${amountLabel}</div></td><td><div class="table-main">${isPayout?'−':'+'}${fmtNumber(t.usdt,4)}</div><div class="table-sub">USDT</div></td><td>${statusBadge(t.status)}</td></tr>`;
+      const rawId = String(t.id || '—');
+      const shortId = rawId.length > 14 ? `${rawId.slice(0, 8)}…${rawId.slice(-4)}` : rawId;
+      const transactionRef = isPayout ? `<div class="table-sub history-transaction-id"><span title="${safe(rawId)}">${safe(shortId)}</span><button type="button" class="transaction-slip-link" data-view-transaction="${safe(t.id)}" aria-label="View payout slip ${safe(t.id)}">View slip ↗</button></div>` : `<div class="table-sub history-transaction-id" title="${safe(rawId)}">${safe(shortId)}</div>`;
+      const amount = isPayout ? `−${money(t.amount)}` : `+${money(t.amount)}`;
+      const amountLabel = isPayout ? 'INR payout' : 'Estimated INR';
+      const time = new Intl.DateTimeFormat('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}).format(new Date(t.timestamp));
+      return `<tr><td><div class="table-main">${isPayout ? 'INR payout' : 'USDT deposit'}</div>${transactionRef}<div class="table-sub history-transaction-date">${safe(dateShort(t.timestamp))} · ${safe(time)}</div>${t.rejectionReason ? `<div class="table-sub">Reason: ${safe(t.rejectionReason)}</div>` : ''}</td><td><div class="table-main">${amount}</div><div class="table-sub">${amountLabel}</div></td><td>${statusBadge(t.status)}</td></tr>`;
     }).join('');
     $('historyEmpty').style.display = txs.length ? 'none' : 'block';
     document.querySelector('.history-wrap').style.display = txs.length ? 'block' : 'none';
@@ -438,7 +479,8 @@
   function updateSendEstimate() {
     const raw = $('sendAmount').value.trim(); const amount = Number(raw); const available = Math.max(0, state.balance * state.rate);
     const status = $('sendAmountStatus'); const remaining = $('sendRemainingInr');
-    if (!raw || !Number.isFinite(amount) || amount <= 0) { remaining.textContent='—'; status.className='lookup-status'; status.textContent=`Available payout value: ${money(available)}.`; return; }
+    if (!raw || !Number.isFinite(amount) || amount <= 0) { remaining.textContent='—'; status.className='lookup-status'; status.textContent=`Minimum withdrawal is ₹1,000. Available payout value: ${money(available)}.`; return; }
+    if (amount < 1000) { remaining.textContent=money(Math.max(0, available - amount)); status.className='lookup-status error'; status.textContent='Minimum withdrawal is ₹1,000.'; return; }
     if (amount > available + 1e-7) { remaining.textContent='Insufficient balance'; status.className='lookup-status error'; status.textContent=`This exceeds your available payout value of ${money(available)}.`; return; }
     remaining.textContent = money(Math.max(0, available - amount)); status.className='lookup-status success'; status.textContent=`Available payout value: ${money(available)}. Final validation happens on the server.`;
   }
@@ -446,6 +488,11 @@
     const amount = Math.max(0, Number($('depositAmount')?.value) || 0);
     if ($('depositEstUsdt')) $('depositEstUsdt').textContent = `${fmtNumber(amount, 6)} USDT`;
     if ($('depositEstInr')) $('depositEstInr').textContent = money(amount * state.rate);
+    const validAmount = amount >= 10;
+    const hint = $('depositMinimumHint');
+    if (hint) { hint.className = `lookup-status${amount > 0 && !validAmount ? ' error' : ''}`; hint.textContent = validAmount ? 'Minimum deposit met.' : 'Minimum deposit is 10 USDT.'; }
+    const submit = $('depositSubmit');
+    if (submit) submit.disabled = !networkConfig.depositConfigured || !validAmount;
   }
   async function updateDepositAddress() {
     const network = $('depositNetwork').value;
@@ -457,7 +504,7 @@
       if (Number.isFinite(Number(config.rate)) && Number(config.rate) > 0) { state.rate = Number(config.rate); renderRateDisplays(); updateDepositEstimate(); updateSendEstimate(); }
       $('depositAddressText').textContent = config.depositAddress || 'No receiving address configured';
       $('copyDepositAddress').disabled = !config.depositAddress;
-      $('depositSubmit').disabled = !config.depositConfigured;
+      $('depositSubmit').disabled = !config.depositConfigured || Number($('depositAmount').value) < 10;
       $('depositAddressStatus').className = 'lookup-status ' + (config.depositConfigured ? 'success' : 'error');
       $('depositAddressStatus').textContent = config.depositConfigured ? 'Check that the address and network match before sending any assets.' : `Deposits are disabled on ${network} until an authorized receiving address is configured.`;
     } catch (error) {
@@ -754,6 +801,7 @@
     } catch (error) { toast(error.message,'error'); button.disabled = false; }
   });
 
+  $('authRetryButton').addEventListener('click', () => initialize());
   $('authForm').addEventListener('submit', async event => {
     event.preventDefault(); const submit=$('authSubmit'); submit.disabled=true;
     try {
@@ -805,17 +853,53 @@
     } catch(error) {toast(error.message,'error');}
     finally {validateBankForm();}
   });
-  $('sendForm').addEventListener('submit',async event=>{
-    event.preventDefault(); const bankId=$('sendBank').value; const amountInr=Number($('sendAmount').value);
-    if(!bankId){toast('Choose a saved bank account first.','error');return;}
-    if(!Number.isFinite(amountInr)||amountInr<=0){toast('Enter a valid INR amount.','error');return;}
-    const submit=$('sendSubmit');submit.disabled=true;
+  function closePayoutReview() {
+    $('payoutReviewModal').classList.remove('open');
+    pendingPayoutReview = null;
+    $('confirmPayoutRequest').disabled = false;
+  }
+  function openPayoutReview(bankId, amountInr) {
+    const bank = state.banks.find(item => item.id === bankId);
+    if (!bank) { toast('Choose a saved bank account first.', 'error'); return; }
+    const rate = Math.max(Number(state.rate) || RATE_DEFAULT, 0.000001);
+    const usdtToReserve = Math.ceil((amountInr / rate) * 1_000_000 - 1e-9) / 1_000_000;
+    const availableInr = Math.max(0, state.balance * rate);
+    $('payoutReviewHolder').textContent = bank.holder || '—';
+    $('payoutReviewBank').textContent = [bank.bank, bank.branch].filter(Boolean).join(' · ') || 'Saved bank account';
+    $('payoutReviewAccount').textContent = `Account ending ${bank.last4 || String(bank.account || '').slice(-4) || '????'}`;
+    $('payoutReviewIfsc').textContent = bank.ifsc || '—';
+    $('payoutReviewAmount').textContent = money(amountInr);
+    $('payoutReviewUsdt').textContent = `${fmtNumber(usdtToReserve, 6)} USDT`;
+    $('payoutReviewRemaining').textContent = money(Math.max(0, availableInr - amountInr));
+    pendingPayoutReview = { bankId, amountInr };
+    $('payoutReviewModal').classList.add('open');
+  }
+  async function submitReviewedPayout() {
+    if (!pendingPayoutReview) return;
+    const payload = { ...pendingPayoutReview };
+    const confirmButton = $('confirmPayoutRequest'); confirmButton.disabled = true;
     try {
-      const result=await request('/api/payouts',{method:'POST',body:{bankId,amountInr}});
-      await refreshState({quiet:true}); $('sendForm').reset(); updateSendEstimate(); await openReceipt(state.transactions.find(t=>t.id===result.transaction.id)||result.transaction); toast('Payout request submitted and balance reserved. Status: Pending.');
-    } catch(error) {toast(error.message,'error');}
-    finally {submit.disabled=false;}
+      const result = await request('/api/payouts', { method:'POST', body:payload });
+      closePayoutReview();
+      await refreshState({ quiet:true }); $('sendForm').reset(); updateSendEstimate();
+      await openReceipt(state.transactions.find(t => t.id === result.transaction.id) || result.transaction);
+      toast('Payout request submitted and balance reserved. Status: Pending.');
+    } catch (error) { toast(error.message, 'error'); }
+    finally { confirmButton.disabled = false; }
+  }
+  $('sendForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const bankId = $('sendBank').value;
+    const amountInr = Number($('sendAmount').value);
+    if (!bankId) { toast('Choose a saved bank account first.', 'error'); return; }
+    if (!Number.isFinite(amountInr) || amountInr < 1000) { toast('Minimum withdrawal is ₹1,000.', 'error'); return; }
+    if (amountInr > state.balance * state.rate + 1e-7) { toast('Insufficient available USDT balance for this payout.', 'error'); return; }
+    openPayoutReview(bankId, amountInr);
   });
+  $('cancelPayoutReview').addEventListener('click', closePayoutReview);
+  $('closePayoutReview').addEventListener('click', closePayoutReview);
+  $('confirmPayoutRequest').addEventListener('click', submitReviewedPayout);
+  $('payoutReviewModal').addEventListener('click', event => { if (event.target === $('payoutReviewModal')) closePayoutReview(); });
   if ($('depositSettingsForm')) $('depositSettingsForm').addEventListener('submit', async event => {
     event.preventDefault();
     if (state.user?.role !== 'admin') { toast('Administrator access is required.', 'error'); return; }
@@ -837,11 +921,12 @@
   $('depositForm').addEventListener('submit',async event=>{
     event.preventDefault(); const amountUsdt=Number($('depositAmount').value); const network='TRC20'; const txHash=$('depositTxHash').value.trim();
     if(!networkConfig.depositConfigured){toast('Deposits are disabled until a receiving address is configured.','error');return;}
+    if(!Number.isFinite(amountUsdt) || amountUsdt < 10){toast('Minimum deposit is 10 USDT.','error');return;}
     const submit=$('depositSubmit');submit.disabled=true;
     try {
       const result=await request('/api/deposits',{method:'POST',body:{amountUsdt,network,txHash}}); await refreshState({quiet:true}); $('depositForm').reset(); updateDepositEstimate(); await updateDepositAddress(); toast(`Deposit ${result.transaction.id} submitted. Status: Pending.`); go('history'); $('historyFilter').value='deposit'; renderHistoryTable();
     } catch(error) {toast(error.message,'error');}
-    finally {submit.disabled=!networkConfig.depositConfigured;}
+    finally {submit.disabled=!networkConfig.depositConfigured || Number($('depositAmount').value) < 10;}
   });
   $('historyFilter').addEventListener('change',renderHistoryTable);
   $('notificationBell').addEventListener('click', async () => { go('notifications'); await loadNotifications({ quiet: true }).catch(() => {}); });
@@ -857,7 +942,7 @@
   $('downloadReceipt').addEventListener('click',async()=>{if(!currentReceipt)return;try{await downloadReceiptImage(currentReceipt);toast('Payout slip downloaded as a PNG image.');}catch(error){toast(error.message,'error');}});
   $('closeReceipt').addEventListener('click',closeReceipt); $('receiptDone').addEventListener('click',closeReceipt);
   $('receiptModal').addEventListener('click',event=>{if(event.target===$('receiptModal'))closeReceipt();});
-  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('receiptModal').classList.contains('open'))closeReceipt();});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('receiptModal').classList.contains('open'))closeReceipt();if(event.key==='Escape'&&$('payoutReviewModal').classList.contains('open'))closePayoutReview();});
   window.addEventListener('popstate',()=>{
     if(isAdminPath()) {
       if(state.user?.role==='admin') go('admin',false);

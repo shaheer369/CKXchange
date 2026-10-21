@@ -47,3 +47,20 @@ For browser push, generate a key pair with `node scripts/generate-vapid.js`, the
 
 - `npm run check` and `npm test` passed in the source workspace, including static UI/security checks and Web Push key/encryption format tests.
 - The full MongoDB HTTP integration suite and live delivery to browser push services were **not run** here because there is no disposable MongoDB test URI or live push subscription in this workspace. Those need staging verification before production use.
+
+## Version 2.4.0
+
+- Added a payout review/confirmation modal before submitting and reserving USDT.
+- Fixed refresh-time login flash by showing a session-restoration state until authentication is confirmed.
+- Extended rolling login-session cookie and MongoDB session TTL to 10 days.
+- Simplified transaction history to three columns (Transaction, Amount, Status) without horizontal swipe; date/time now appears under the transaction identifier.
+- Added owner-only in-app/Web Push notification when an admin approves a USDT deposit.
+- Enforced a minimum USDT deposit of 10 and minimum INR payout of ₹1,000 in both UI and server APIs.
+
+## v2.4.0 — payout, session, and transaction improvements
+
+- Added a pre-submit payout review and explicit confirmation before reserving funds.
+- Improved session restoration: temporary network/server failures retry and offer a retry screen instead of falsely presenting a login form. Login and registration now explicitly wait for MongoDB-backed session persistence. Rolling session cookie and store lifetime are 10 days.
+- Kept the mobile transaction list to three columns (Transaction, Amount, Status), with abbreviated transaction IDs, view-slip action, and date/time below the transaction reference.
+- Added an owner-targeted in-app/Web Push notification when a pending USDT deposit is approved and credited.
+- Enforced the USDT 10 minimum deposit and INR 1,000 minimum withdrawal at both frontend and backend.

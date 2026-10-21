@@ -6,8 +6,8 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#090b13" name="theme-color"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
-<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.3.0"/>
-<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.3.0"/>
+<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.0"/>
+<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.0"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="CKXchange"/>
@@ -216,8 +216,17 @@
     .transaction-slip-link:hover { color: #e1d9ff; text-decoration: underline; }
     .transaction-slip-link:focus-visible { outline: 2px solid #a895ff; outline-offset: 3px; border-radius: 3px; }
     .status-tag { color: var(--green); font-size: 9px; border-radius: 6px; padding: 5px 7px; background: rgba(97,230,170,.08); display: inline-block; }
-    .history-wrap { overflow-x: auto; }
-    .history-table { min-width: 600px; }
+    .history-wrap { overflow-x: hidden; min-width: 0; }
+    .customer-history-table { min-width: 0; width: 100%; table-layout: fixed; }
+    .customer-history-table th:nth-child(1), .customer-history-table td:nth-child(1) { width: 54%; }
+    .customer-history-table th:nth-child(2), .customer-history-table td:nth-child(2) { width: 25%; }
+    .customer-history-table th:nth-child(3), .customer-history-table td:nth-child(3) { width: 21%; }
+    .customer-history-table th, .customer-history-table td { padding-left: 8px; padding-right: 8px; }
+    .customer-history-table td:first-child { overflow-wrap: anywhere; min-width: 0; }
+    .customer-history-table td:nth-child(2) .table-main { overflow-wrap: anywhere; }
+    .customer-history-table .status-tag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+    .history-transaction-id { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+    .history-transaction-date { margin-top: 6px; line-height: 1.45; white-space: normal; }
     .stats-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 13px; margin-bottom: 18px; }
     .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: 19px; padding: 19px; min-width: 0; }
     .stat-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; color: var(--muted); font-size: 10px; line-height: 1.4; }
@@ -250,6 +259,16 @@
     .modal-backdrop { display: none; position: fixed; inset: 0; padding: 22px; align-items: center; justify-content: center; z-index: 150; background: rgba(4,5,11,.77); backdrop-filter: blur(10px); }
     .modal-backdrop.open { display: flex; animation: fade-in .18s ease; }
     .receipt-modal { width: min(440px,100%); max-height: min(92dvh,850px); overflow-y: auto; border: 1px solid rgba(178,159,255,.22); background: #111522; border-radius: 25px; box-shadow: 0 30px 100px rgba(0,0,0,.6); }
+    .payout-review-modal { width: min(460px,100%); max-height: min(92dvh,850px); overflow-y: auto; border: 1px solid rgba(178,159,255,.22); background: #111522; border-radius: 25px; box-shadow: 0 30px 100px rgba(0,0,0,.6); }
+    .payout-review-head { padding: 25px 24px 18px; border-bottom: 1px dashed rgba(255,255,255,.13); position: relative; }
+    .payout-review-head h2 { margin: 0; font-size: 20px; }
+    .payout-review-head p { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
+    .payout-review-body { padding: 18px 24px; }
+    .payout-review-row { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.05); font-size:11px; }
+    .payout-review-row span { color:var(--muted); flex:0 0 42%; }
+    .payout-review-row strong { flex:1; min-width:0; text-align:right; overflow-wrap:anywhere; }
+    .payout-review-amount { color:#c8bbff; font-size:22px; }
+    .payout-review-actions { padding: 0 24px 24px; display:grid; grid-template-columns:1fr 1.3fr; gap:9px; }
     .receipt-head { padding: 25px 25px 21px; text-align: center; border-bottom: 1px dashed rgba(255,255,255,.13); position: relative; }
     .modal-close { position: absolute; top: 15px; right: 15px; border: 1px solid var(--line); background: rgba(255,255,255,.04); color: #cfd3e4; width: 29px; height: 29px; border-radius: 9px; display: grid; place-items: center; }
     .modal-close svg { width: 15px; height: 15px; }
@@ -314,7 +333,9 @@
       .mobile-nav-button.active svg { filter: drop-shadow(0 0 5px rgba(139,92,246,.4)); }
       .toast-region { right: 12px; bottom: calc(75px + env(safe-area-inset-bottom)); }
       .modal-backdrop { padding: 12px; align-items: flex-end; }
-      .receipt-modal { border-radius: 24px 24px 18px 18px; max-height: calc(94dvh - env(safe-area-inset-bottom)); }
+      .receipt-modal, .payout-review-modal { border-radius: 24px 24px 18px 18px; max-height: calc(94dvh - env(safe-area-inset-bottom)); }
+      .payout-review-head, .payout-review-body { padding-left:20px; padding-right:20px; }
+      .payout-review-actions { padding-left:20px; padding-right:20px; }
       .receipt-head { padding: 22px 20px 17px; }
       .receipt-body { padding: 18px 20px 20px; }
       .receipt-actions { padding: 0 20px 21px; }
@@ -322,9 +343,13 @@
     }
     @media (max-width: 380px) { .main { padding-inline: 12px; } .balance-amount { font-size: 34px; } .balance-card { padding: 20px 17px; } .quick-actions { gap: 8px; } .topbar { gap: 8px; } .demo-chip { letter-spacing: -.1px; } .stats-grid { gap: 8px; } .stat-card { padding: 12px; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
-
+  
     [hidden] { display: none !important; }
     body.auth-pending .app-shell, body.auth-pending .mobile-bottom, body.auth-pending #toastRegion, body.auth-pending #receiptModal { visibility: hidden; }
+    body.auth-restoring .auth-tabs, body.auth-restoring #authForm { display: none; }
+    body.auth-restoring .auth-card { text-align: center; }
+    body.auth-restoring .auth-copy { margin-top: 12px; }
+    .auth-retry-button { margin-top: 18px; }
     .auth-overlay { position: fixed; z-index: 500; inset: 0; display: grid; place-items: center; padding: 22px; background: radial-gradient(ellipse at 20% 0%, rgba(109,74,255,.20), transparent 40%), #080a11; overflow-y:auto; }
     .auth-card { width: min(440px, 100%); border: 1px solid var(--line-strong); border-radius: 26px; background: rgba(16,19,31,.96); padding: 28px; box-shadow: var(--shadow); }
     .auth-brand { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
@@ -390,7 +415,7 @@
     .copy-inline { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
     .copy-inline .admin-hash { flex:1 1 120px; }
     @media (max-width:760px) { .admin-subnav { gap:4px; } .admin-subnav a { padding:9px 10px; } .admin-pagination { align-items:flex-start; } }
-
+  
     .offline-banner { margin: 0 0 18px; border: 1px solid rgba(241,199,121,.24); background: rgba(241,199,121,.07); color: #f0cf88; border-radius: 13px; padding: 11px 14px; font-size: 11px; line-height: 1.5; }
     .notification-bell { position: relative; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; color: #c8cde0; background: rgba(255,255,255,.035); border: 1px solid var(--line); }
     .notification-bell:hover { border-color: var(--line-strong); background: rgba(255,255,255,.07); }
@@ -416,11 +441,12 @@
     @media (max-width: 560px) { .notification-bell { width:38px; height:38px; } .notification-controls { align-items:flex-start; } }
 </style>
 </head>
-<body class="auth-pending">
+<body class="auth-pending auth-restoring">
 <div class="auth-overlay" id="authOverlay">
 <section aria-labelledby="authTitle" class="auth-card">
 <div class="auth-brand"><div class="brand-mark"><svg fill="none" viewbox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="white" stroke-linejoin="round" stroke-width="1.6"></path><path d="M8 9h8M12 7v10M8 15h8" stroke="white" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
-<h1 class="auth-title" id="authTitle">Sign in to CKXchange</h1><p class="auth-copy">Your account and transaction records are stored on the CKXchange server.</p>
+<h1 class="auth-title" id="authTitle">Restoring your session…</h1><p class="auth-copy" id="authCopy">Checking your saved sign-in securely. Please wait a moment.</p>
+<button class="primary-btn full auth-retry-button" hidden id="authRetryButton" type="button">Retry connection</button>
 <div class="auth-tabs"><button class="auth-tab active" data-auth-mode="login" type="button">Sign in</button><button class="auth-tab" data-auth-mode="register" type="button">Create account</button></div>
 <form id="authForm">
 <div class="field" hidden="" id="authNameField"><label for="authName">Full name</label><input autocomplete="name" id="authName" maxlength="80" placeholder="YOUR FULL NAME" type="text"/></div>
@@ -488,9 +514,9 @@
 </div>
 <form id="sendForm">
 <div class="field"><label for="sendBank">Pay to bank account</label><select id="sendBank" required=""><option value="">Select a saved bank</option></select></div>
-<div class="field"><label for="sendAmount">Amount to send <span class="field-hint">Indian Rupees</span></label><div class="input-wrap"><input class="input-with-icon" id="sendAmount" inputmode="decimal" min="1" placeholder="e.g. 5,000.00" required="" step="0.01" type="number"/><span class="input-suffix">INR ₹</span></div><div class="lookup-status" id="sendAmountStatus">Enter the amount in INR.</div><div class="send-inline-estimate"><div><span class="send-inline-label">Remaining INR after payout</span><strong id="sendRemainingInr">—</strong></div></div></div>
+<div class="field"><label for="sendAmount">Amount to send <span class="field-hint">Indian Rupees</span></label><div class="input-wrap"><input class="input-with-icon" id="sendAmount" inputmode="decimal" min="1000" placeholder="e.g. 5,000.00" required="" step="0.01" type="number"/><span class="input-suffix">INR ₹</span></div><div class="lookup-status" id="sendAmountStatus">Minimum withdrawal is ₹1,000.</div><div class="send-inline-estimate"><div><span class="send-inline-label">Remaining INR after payout</span><strong id="sendRemainingInr">—</strong></div></div></div>
 <div class="helper-box"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"></circle><path d="M12 11v5m0-8h.01" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg><span>Payout requests remain pending until an authorized admin records a verified bank transfer.</span></div>
-<button class="primary-btn full" id="sendSubmit" type="submit"><svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Submit payout request</button>
+<button class="primary-btn full" id="sendSubmit" type="submit"><svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Review payout</button>
 </form>
 </div>
 <section class="page-panel"><div class="section-row" style="margin:0 0 7px"><div><h2 class="section-title">Saved bank accounts</h2><div class="section-caption">Select an account above or remove one you no longer need.</div></div></div><div class="saved-bank-list" id="sendBankList"></div></section>
@@ -530,7 +556,7 @@
 <div class="page-panel">
 <div class="form-heading"><h2>Request a USDT deposit</h2><p>Submit your transaction details for review. Before using deposits, the administrator must configure a verified receiving address. Funds are not credited until the administrator verifies the on-chain transfer.</p></div>
 <form id="depositForm">
-<div class="field"><label for="depositAmount">Deposit amount <span class="field-hint">USDT</span></label><div class="input-wrap"><input id="depositAmount" max="10000000" min="0.000001" placeholder="e.g. 100" required="" step="0.000001" type="number"/><span class="input-suffix">USDT ₮</span></div></div>
+<div class="field"><label for="depositAmount">Deposit amount <span class="field-hint">USDT</span></label><div class="input-wrap"><input id="depositAmount" max="10000000" min="10" placeholder="e.g. 100" required="" step="0.000001" type="number"/><span class="input-suffix">USDT ₮</span></div><div class="lookup-status" id="depositMinimumHint">Minimum deposit is 10 USDT.</div></div>
 <div class="field"><label for="depositNetwork">Blockchain network</label><select id="depositNetwork" required=""><option value="TRC20">USDT · TRON (TRC20) — only supported network</option></select><div class="lookup-status">Send USDT using the TRON network only. Transfers made on another network may be lost.</div></div><div class="field" id="depositAddressField"><label for="depositAddressText">Receiving address</label><div class="admin-address-box"><code id="depositAddressText">No receiving address configured</code><button class="secondary-btn" disabled="" id="copyDepositAddress" type="button">Copy</button></div><div class="lookup-status error" id="depositAddressStatus">Deposits are disabled until an authorized receiving address is configured.</div></div>
 <div class="field"><label for="depositTxHash">Blockchain transaction hash</label><input autocomplete="off" id="depositTxHash" maxlength="160" minlength="20" placeholder="Paste the transaction hash" required="" spellcheck="false" type="text"/><div class="lookup-status">Use the transaction hash from the actual blockchain transfer.</div></div>
 <div class="estimate-card"><div class="estimate-row"><span>Request amount</span><strong id="depositEstUsdt">0.000000 USDT</strong></div><div class="estimate-row total"><span>Approximate INR value</span><strong id="depositEstInr">₹0.00</strong></div></div>
@@ -543,7 +569,7 @@
 </section>
 <section aria-label="Transaction history" class="page" id="page-history">
 <div class="stats-grid"><div class="stat-card"><div class="stat-top">Successful payouts <svg fill="none" viewbox="0 0 24 24"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="historyCount">0</div><div class="stat-foot">Verified bank payouts</div></div><div class="stat-card"><div class="stat-top">Total sent <svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="historyTotal">₹0</div><div class="stat-foot">Across all payouts</div></div><div class="stat-card"><div class="stat-top">USDT deducted <svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"></circle><path d="M8 9h8m-4-2v10m-4-3h8" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"></path></svg></div><div class="stat-value" id="historyUsdt">0.0000</div><div class="stat-foot">Successful payout reservation amounts</div></div></div>
-<section class="panel"><div class="history-toolbar"><div><h2 class="section-title">All transactions</h2><div class="section-caption" id="historyCaption">Your payout records in one place</div></div><select aria-label="Filter transactions" class="filter-select" id="historyFilter"><option value="all">All activity</option><option value="payout">Payouts</option><option value="deposit">USDT deposits</option></select></div><div class="history-wrap"><table class="history-table"><thead><tr><th>Transaction</th><th>Date &amp; time</th><th>Amount</th><th>USDT</th><th>Status</th></tr></thead><tbody id="historyRows"></tbody></table></div><div class="empty-state" id="historyEmpty" style="display:none"><div class="empty-icon"><svg fill="none" viewbox="0 0 24 24"><path d="M3 7h18M5 7v13h14V7M9 4h6M9 11v5m6-5v5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="empty-title">No transactions yet</div><div class="empty-desc">Your submitted deposits and payout requests will appear here.</div><button class="primary-btn" data-go="send">Start a payout</button></div></section>
+<section class="panel"><div class="history-toolbar"><div><h2 class="section-title">All transactions</h2><div class="section-caption" id="historyCaption">Your payout records in one place</div></div><select aria-label="Filter transactions" class="filter-select" id="historyFilter"><option value="all">All activity</option><option value="payout">Payouts</option><option value="deposit">USDT deposits</option></select></div><div class="history-wrap"><table class="history-table customer-history-table"><thead><tr><th>Transaction</th><th>Amount</th><th>Status</th></tr></thead><tbody id="historyRows"></tbody></table></div><div class="empty-state" id="historyEmpty" style="display:none"><div class="empty-icon"><svg fill="none" viewbox="0 0 24 24"><path d="M3 7h18M5 7v13h14V7M9 4h6M9 11v5m6-5v5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="empty-title">No transactions yet</div><div class="empty-desc">Your submitted deposits and payout requests will appear here.</div><button class="primary-btn" data-go="send">Start a payout</button></div></section>
 </section>
 <!-- CKX_ADMIN_UI_START -->
 <section aria-label="Admin panel" class="page" id="page-admin">
@@ -611,7 +637,7 @@
 <div class="page-panel" style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div class="avatar" style="width:60px;height:60px;border-radius:19px;font-size:19px">CX</div><div style="flex:1;min-width:170px"><div id="profileMemberName" style="font-size:18px;font-weight:760;letter-spacing:-.4px">CKXchange member</div><div id="profileMemberEmail" style="color:var(--muted);font-size:11px;margin-top:5px">Sign in to view account</div><div style="margin-top:10px"><span class="live-badge">● Authenticated account</span></div></div><div style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:8px 10px">MEMBER</div></div></div>
 <div class="stats-grid"><div class="stat-card"><div class="stat-top">Total INR sent <svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="profileTotal">₹0</div><div class="stat-foot">Successful payouts</div></div><div class="stat-card"><div class="stat-top">Saved banks <svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBanks">0</div><div class="stat-foot">Linked destinations</div></div><div class="stat-card"><div class="stat-top">Wallet balance <svg fill="none" viewbox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" stroke-width="1.6" width="17" x="3.5" y="6"></rect><path d="M3.5 10h17M16 15h1" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBalance">0.0000</div><div class="stat-foot">Available USDT</div></div></div>
 <section class="page-panel"><h2 class="section-title">App settings</h2><p class="section-caption">Application details and your account controls.</p><div class="settings-list">
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.3.0</div></div>
+<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.0</div></div>
 </div>
 
 <section class="page-panel" id="contactSettingsPanel" style="margin-top:16px"><h2 class="section-title">Support contact details</h2><p class="section-caption">Add a Telegram username or numeric ID and phone number so CKXchange administrators can contact you if there is an issue with a deposit or payout. These details are visible to authorized administrators only.</p>
@@ -633,6 +659,12 @@
 <!-- CKX_ADMIN_UI_END -->
 </nav>
 <div aria-atomic="false" aria-live="polite" class="toast-region" id="toastRegion"></div>
+<div aria-labelledby="payoutReviewTitle" aria-modal="true" class="modal-backdrop" id="payoutReviewModal" role="dialog" aria-describedby="payoutReviewDescription">
+<section class="payout-review-modal">
+<div class="payout-review-head"><button aria-label="Close payout review" class="modal-close" id="closePayoutReview" type="button"><svg fill="none" viewbox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg></button><h2 id="payoutReviewTitle">Review payout</h2><p id="payoutReviewDescription">Check the recipient and amount carefully. Your available USDT will only be reserved after you confirm.</p></div>
+<div class="payout-review-body"><div class="payout-review-row"><span>Account holder</span><strong id="payoutReviewHolder">—</strong></div><div class="payout-review-row"><span>Bank</span><strong id="payoutReviewBank">—</strong></div><div class="payout-review-row"><span>Account number</span><strong id="payoutReviewAccount">—</strong></div><div class="payout-review-row"><span>IFSC</span><strong id="payoutReviewIfsc">—</strong></div><div class="payout-review-row"><span>Withdrawal amount</span><strong class="payout-review-amount" id="payoutReviewAmount">₹0.00</strong></div><div class="payout-review-row"><span>Estimated USDT to reserve</span><strong id="payoutReviewUsdt">0 USDT</strong></div><div class="payout-review-row"><span>Available after request (estimate)</span><strong id="payoutReviewRemaining">₹0.00</strong></div></div>
+<div class="payout-review-actions"><button class="secondary-btn" id="cancelPayoutReview" type="button">Go back</button><button class="primary-btn" id="confirmPayoutRequest" type="button">Confirm payout</button></div>
+</section></div>
 <div aria-labelledby="receiptTitle" aria-modal="true" class="modal-backdrop" id="receiptModal" role="dialog">
 <section class="receipt-modal">
 <div class="receipt-head"><button aria-label="Close receipt" class="modal-close" id="closeReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg></button><div class="success-mark"><svg fill="none" viewbox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.3"></path></svg></div><h2 id="receiptTitle">Payout Pending</h2><p>Your payout request is waiting for review.</p><div class="receipt-amount" id="receiptAmount">₹0.00</div><div class="receipt-amount-label">AMOUNT SENT · INR</div></div>
@@ -640,5 +672,5 @@
 <div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button><div class="receipt-demo-note">CKXchange status receipt · Pending/processing is not proof of payment.</div></div>
 </section>
 </div>
-<script defer="True" src="/app.js?v=2.3.0"></script></body>
+<script defer="True" src="/app.js?v=2.4.0"></script></body>
 </html>
