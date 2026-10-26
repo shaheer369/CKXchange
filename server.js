@@ -702,6 +702,17 @@ app.get('/api/banks', requireAuth, async (req, res, next) => {
   try { const banks = await db.collection('banks').find({ user_id: req.user._id }).sort({ created_at: -1 }).toArray(); res.json({ banks: banks.map(bankDto) }); }
   catch (error) { next(error); }
 });
+app.get('/api/banks/:id/payout-review', requireAuth, async (req, res, next) => {
+  try {
+    const bank = await db.collection('banks').findOne({ _id: req.params.id, user_id: req.user._id });
+    if (!bank || !bank.account_cipher) return apiError(res, 404, 'Saved bank account was not found for this account.');
+    let account;
+    try { account = decryptAccount(bank.account_cipher); }
+    catch (_) { return apiError(res, 500, 'Could not securely read this saved account number. Contact support.'); }
+    res.set('Cache-Control', 'no-store, max-age=0').set('Pragma', 'no-cache');
+    res.json({ bank: { id: bank._id, account } });
+  } catch (error) { next(error); }
+});
 app.post('/api/banks', requireAuth, mutationLimiter, async (req, res, next) => {
   try {
     const holder = String(req.body?.holder || '').trim().replace(/\s{2,}/g, ' ');

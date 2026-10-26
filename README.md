@@ -267,3 +267,10 @@ The full account number on a payout slip is returned by a dedicated no-cache end
 - Minimum deposit is 10 USDT and minimum payout is ₹1,000; both are enforced in frontend and backend.
 - Deposit approval creates a deduplicated notification for the active deposit owner after balance credit is committed.
 - Customer transaction history has three columns: Transaction, Amount, Status; date/time and a payout slip link appear under the transaction ID, avoiding horizontal scrolling.
+
+
+## v2.4.1 visual and payout-review fixes
+
+- Mobile transaction history keeps status badges on one line and aligns the View slip action with the transaction ID.
+- Payout review now displays the complete saved account number through a dedicated owner-scoped, no-cache endpoint. Bulk bank listings remain masked; the new endpoint returns only the selected account number.
+- Removed the Pending/Processing disclaimer from payout slip output.

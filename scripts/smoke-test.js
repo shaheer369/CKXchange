@@ -94,7 +94,7 @@ async function waitForStart(proc, origin) {
   assert.equal(manifest.response.status, 200, 'PWA manifest should be served');
   assert.match(manifest.text, /\"display\": \"standalone\"/, 'PWA should use an installable standalone display mode');
   assert.match(manifest.text, /ckx-logo-512\.png/, 'PWA manifest should use the CKX brand logo');
-  const logoResponse = await fetch(`${origin}/icons/ckx-logo-192.png?v=2.4.0`);
+  const logoResponse = await fetch(`${origin}/icons/ckx-logo-192.png?v=2.4.1`);
   assert.equal(logoResponse.status, 200, 'CKX PWA logo must be served as a static asset');
   assert.match(logoResponse.headers.get('content-type') || '', /image\/png/, 'CKX PWA logo must be served as PNG');
   const serviceWorker = await api(origin, '/service-worker.js');
@@ -215,6 +215,12 @@ async function waitForStart(proc, origin) {
   const bankEncryptedData = Buffer.concat([bankCipher.update(expectedFullAccount, 'utf8'), bankCipher.final()]);
   const validAccountCipher = JSON.stringify({ iv: bankIv.toString('base64'), tag: bankCipher.getAuthTag().toString('base64'), data: bankEncryptedData.toString('base64') });
   await testDb.collection('banks').insertOne({ _id: 'BNK-SMOKE-001', user_id: registration.data.user.id, holder: 'TEST CUSTOMER', account_cipher: validAccountCipher, account_fingerprint: 'smoke-fingerprint', account_last4: expectedFullAccount.slice(-4), ifsc: 'TEST0123456', bank_name: 'Smoke Bank', branch_name: 'Smoke Branch', created_at: new Date().toISOString() });
+  const bankReview = await api(origin, '/api/banks/BNK-SMOKE-001/payout-review', { cookie: customer.cookie });
+  assert.equal(bankReview.response.status, 200, 'bank owner should be able to see the full account number during payout review');
+  assert.equal(bankReview.data.bank.account, expectedFullAccount, 'payout review should show the full saved account number');
+  assert.equal(bankReview.response.headers.get('cache-control'), 'no-store, max-age=0', 'full bank account details must not be cached');
+  const otherBankReview = await api(origin, '/api/banks/BNK-SMOKE-001/payout-review', { cookie: admin.cookie });
+  assert.equal(otherBankReview.response.status, 404, 'other users and admins must not read another user full bank account number');
   const tooSmallPayout = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 999.99 } });
   assert.equal(tooSmallPayout.response.status, 400, 'INR withdrawals below ₹1,000 must be rejected by the server');
   const tooLargePayout = await api(origin, '/api/payouts', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { bankId: 'BNK-SMOKE-001', amountInr: 1200 } });

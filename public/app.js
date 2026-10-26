@@ -539,18 +539,21 @@
   }
   function roundedRect(ctx,x,y,w,h,r) { const radius=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+radius,y); ctx.arcTo(x+w,y,x+w,y+h,radius); ctx.arcTo(x+w,y+h,x,y+h,radius); ctx.arcTo(x,y+h,x,y,radius); ctx.arcTo(x,y,x+w,y,radius); ctx.closePath(); }
   function createReceiptCanvas(t) {
-    const canvas=document.createElement('canvas'); canvas.width=1000; canvas.height=1130; const ctx=canvas.getContext('2d'); const status=t.status||'pending';
+    const status=t.status||'pending';
+    const rows=[['TRANSACTION ID',t.id||'—'],['DATE & TIME',dateText(t.timestamp)],['ACCOUNT HOLDER',t.holder||'—'],['BANK',t.bank||'—'],['BRANCH',t.branch||'—'],['ACCOUNT NUMBER',String(t.account || '—')],['IFSC CODE',t.ifsc||'—'],['STATUS',statusText(status)]];
+    if(t.bankReference) rows.push(['BANK REFERENCE',t.bankReference]); if(t.rejectionReason) rows.push(['REASON',t.rejectionReason]);
+    const lastRowY=500+(rows.length-1)*57;
+    const canvasHeight=lastRowY+140;
+    const canvas=document.createElement('canvas'); canvas.width=1000; canvas.height=canvasHeight; const ctx=canvas.getContext('2d');
     const accent=status==='success'?'#61e6aa':status==='pending'?'#f0c477':status==='processing'?'#72b7ff':'#ff7792';
-    const bg=ctx.createLinearGradient(0,0,1000,1130); bg.addColorStop(0,'#0d1020'); bg.addColorStop(1,'#101a2a'); ctx.fillStyle=bg; ctx.fillRect(0,0,1000,1130);
+    const bg=ctx.createLinearGradient(0,0,1000,canvasHeight); bg.addColorStop(0,'#0d1020'); bg.addColorStop(1,'#101a2a'); ctx.fillStyle=bg; ctx.fillRect(0,0,1000,canvasHeight);
     const glow=ctx.createRadialGradient(500,100,20,500,100,600); glow.addColorStop(0,`${accent}20`); glow.addColorStop(1,'#10132100'); ctx.fillStyle=glow; ctx.fillRect(0,0,1000,550);
-    ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.lineWidth=2; roundedRect(ctx,36,36,928,1058,34); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.lineWidth=2; roundedRect(ctx,36,36,928,canvasHeight-72,34); ctx.stroke();
     ctx.textAlign='center'; ctx.fillStyle='#b6a2ff'; ctx.font='700 24px Arial'; ctx.fillText('CKXchange',500,96);
     ctx.fillStyle=accent; roundedRect(ctx,440,124,120,120,60); ctx.fill(); ctx.fillStyle='#101321'; ctx.font='700 64px Arial'; ctx.fillText(status==='success'?'✓':status==='pending'?'…':status==='processing'?'↻':'!',500,205);
     ctx.fillStyle='#f5f6ff'; ctx.font='700 39px Arial'; ctx.fillText(`Payout ${statusText(status)}`,500,305);
     ctx.fillStyle='#8e97b3'; ctx.font='500 20px Arial'; ctx.fillText('INR payout request receipt',500,344);
     ctx.fillStyle='#fff'; ctx.font='700 58px Arial'; ctx.fillText(money(t.amount),500,430);
-    const rows=[['TRANSACTION ID',t.id||'—'],['DATE & TIME',dateText(t.timestamp)],['ACCOUNT HOLDER',t.holder||'—'],['BANK',t.bank||'—'],['BRANCH',t.branch||'—'],['ACCOUNT NUMBER',String(t.account || '—')],['IFSC CODE',t.ifsc||'—'],['STATUS',statusText(status)]];
-    if(t.bankReference) rows.push(['BANK REFERENCE',t.bankReference]); if(t.rejectionReason) rows.push(['REASON',t.rejectionReason]);
     let y=500;
     for(const [label,value] of rows) {
       ctx.fillStyle='#8992ad'; ctx.font='600 17px Arial'; ctx.textAlign='left'; ctx.fillText(label,90,y);
@@ -560,8 +563,7 @@
       if(label!=='ACCOUNT NUMBER') while(ctx.measureText(textValue).width>max && textValue.length>6) textValue=textValue.slice(0,-4)+'…';
       ctx.fillText(textValue,910,y); ctx.strokeStyle='rgba(255,255,255,.075)'; ctx.beginPath(); ctx.moveTo(90,y+18); ctx.lineTo(910,y+18); ctx.stroke(); y+=57;
     }
-    ctx.textAlign='center'; ctx.fillStyle='#e8c77e'; ctx.font='700 17px Arial'; ctx.fillText('PENDING / PROCESSING IS NOT PROOF OF PAYMENT',500,1018);
-    ctx.fillStyle='#8b94ad'; ctx.font='500 15px Arial'; ctx.fillText('This receipt reflects the current status stored in CKXchange.',500,1050);
+    ctx.textAlign='center'; ctx.fillStyle='#8b94ad'; ctx.font='500 15px Arial'; ctx.fillText('This receipt reflects the current status stored in CKXchange.',500,lastRowY+60);
     return canvas;
   }
   async function downloadReceiptImage(t) {
@@ -858,21 +860,32 @@
     pendingPayoutReview = null;
     $('confirmPayoutRequest').disabled = false;
   }
-  function openPayoutReview(bankId, amountInr) {
+  async function openPayoutReview(bankId, amountInr) {
     const bank = state.banks.find(item => item.id === bankId);
     if (!bank) { toast('Choose a saved bank account first.', 'error'); return; }
-    const rate = Math.max(Number(state.rate) || RATE_DEFAULT, 0.000001);
-    const usdtToReserve = Math.ceil((amountInr / rate) * 1_000_000 - 1e-9) / 1_000_000;
-    const availableInr = Math.max(0, state.balance * rate);
-    $('payoutReviewHolder').textContent = bank.holder || '—';
-    $('payoutReviewBank').textContent = [bank.bank, bank.branch].filter(Boolean).join(' · ') || 'Saved bank account';
-    $('payoutReviewAccount').textContent = `Account ending ${bank.last4 || String(bank.account || '').slice(-4) || '????'}`;
-    $('payoutReviewIfsc').textContent = bank.ifsc || '—';
-    $('payoutReviewAmount').textContent = money(amountInr);
-    $('payoutReviewUsdt').textContent = `${fmtNumber(usdtToReserve, 6)} USDT`;
-    $('payoutReviewRemaining').textContent = money(Math.max(0, availableInr - amountInr));
-    pendingPayoutReview = { bankId, amountInr };
-    $('payoutReviewModal').classList.add('open');
+    const submitButton = $('sendSubmit');
+    const wasDisabled = submitButton?.disabled || false;
+    if (submitButton) submitButton.disabled = true;
+    try {
+      // Bulk bank listings intentionally mask account numbers. Fetch the full number
+      // only for this owner's review modal through the no-cache, owner-scoped endpoint.
+      const detail = await request(`/api/banks/${encodeURIComponent(bankId)}/payout-review`);
+      const accountNumber = String(detail.bank?.account || '');
+      if (!/^\d{6,24}$/.test(accountNumber)) throw new Error('Could not securely retrieve the full account number. Please try again.');
+      const rate = Math.max(Number(state.rate) || RATE_DEFAULT, 0.000001);
+      const usdtToReserve = Math.ceil((amountInr / rate) * 1_000_000 - 1e-9) / 1_000_000;
+      const availableInr = Math.max(0, state.balance * rate);
+      $('payoutReviewHolder').textContent = bank.holder || '—';
+      $('payoutReviewBank').textContent = [bank.bank, bank.branch].filter(Boolean).join(' · ') || 'Saved bank account';
+      $('payoutReviewAccount').textContent = accountNumber;
+      $('payoutReviewIfsc').textContent = bank.ifsc || '—';
+      $('payoutReviewAmount').textContent = money(amountInr);
+      $('payoutReviewUsdt').textContent = `${fmtNumber(usdtToReserve, 6)} USDT`;
+      $('payoutReviewRemaining').textContent = money(Math.max(0, availableInr - amountInr));
+      pendingPayoutReview = { bankId, amountInr };
+      $('payoutReviewModal').classList.add('open');
+    } catch (error) { toast(error.message || 'Could not load payout review details.', 'error'); }
+    finally { if (submitButton) submitButton.disabled = wasDisabled; }
   }
   async function submitReviewedPayout() {
     if (!pendingPayoutReview) return;

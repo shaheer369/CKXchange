@@ -6,8 +6,8 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#090b13" name="theme-color"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
-<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.0"/>
-<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.0"/>
+<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.1"/>
+<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.1"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="CKXchange"/>
@@ -212,20 +212,21 @@
     .history-table tr:last-child td { border-bottom: 0; }
     .table-main { font-weight: 650; }
     .table-sub { color: var(--muted); font-size: 9px; margin-top: 5px; }
-    .transaction-slip-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 5px; padding: 0; border: 0; background: transparent; color: #b7a7ff; font: inherit; font-size: 9px; text-align: left; cursor: pointer; transition: color .18s, opacity .18s; }
+    .transaction-slip-link { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; margin-top: 0; padding: 0; border: 0; background: transparent; color: #b7a7ff; font: inherit; font-size: 9px; line-height: 1.25; white-space: nowrap; text-align: left; cursor: pointer; transition: color .18s, opacity .18s; }
     .transaction-slip-link:hover { color: #e1d9ff; text-decoration: underline; }
     .transaction-slip-link:focus-visible { outline: 2px solid #a895ff; outline-offset: 3px; border-radius: 3px; }
     .status-tag { color: var(--green); font-size: 9px; border-radius: 6px; padding: 5px 7px; background: rgba(97,230,170,.08); display: inline-block; }
     .history-wrap { overflow-x: hidden; min-width: 0; }
     .customer-history-table { min-width: 0; width: 100%; table-layout: fixed; }
-    .customer-history-table th:nth-child(1), .customer-history-table td:nth-child(1) { width: 54%; }
+    .customer-history-table th:nth-child(1), .customer-history-table td:nth-child(1) { width: 50%; }
     .customer-history-table th:nth-child(2), .customer-history-table td:nth-child(2) { width: 25%; }
-    .customer-history-table th:nth-child(3), .customer-history-table td:nth-child(3) { width: 21%; }
+    .customer-history-table th:nth-child(3), .customer-history-table td:nth-child(3) { width: 25%; }
     .customer-history-table th, .customer-history-table td { padding-left: 8px; padding-right: 8px; }
     .customer-history-table td:first-child { overflow-wrap: anywhere; min-width: 0; }
     .customer-history-table td:nth-child(2) .table-main { overflow-wrap: anywhere; }
-    .customer-history-table .status-tag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-    .history-transaction-id { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+    .customer-history-table .status-tag { max-width: none; white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+    .history-transaction-id { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; line-height: 1.25; }
+    .history-transaction-id > span { flex: 0 0 auto; white-space: nowrap; }
     .history-transaction-date { margin-top: 6px; line-height: 1.45; white-space: normal; }
     .stats-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 13px; margin-bottom: 18px; }
     .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: 19px; padding: 19px; min-width: 0; }
@@ -285,7 +286,6 @@
     .receipt-row strong { font-weight: 650; text-align: right; overflow-wrap: anywhere; max-width: 62%; }
     .receipt-row:last-child { border-bottom: 0; }
     .receipt-actions { padding: 0 25px 25px; display: grid; gap: 9px; }
-    .receipt-demo-note { font-size: 9px; color: #b5a37b; text-align: center; line-height: 1.5; margin-top: 3px; }
     .mobile-safe-space { display: none; }
     @media (min-width: 1200px) { .main { padding: 9px 12px 20px; } .dashboard-grid { gap: 20px; } }
     @media (max-width: 1040px) { .app-shell { grid-template-columns: 205px minmax(0,1fr); gap: 17px; padding: 17px; } .sidebar { padding-inline: 11px; min-height: calc(100dvh - 34px); height: calc(100dvh - 34px); top: 17px; } .brand { padding-inline: 8px; } .dashboard-grid { grid-template-columns: minmax(0,1.1fr) minmax(220px,.9fr); } .balance-card { padding: 23px; } .quick-card { padding: 20px 17px; } .bank-list { grid-template-columns: 1fr; } .inline-add { min-height: 68px; } .two-col { grid-template-columns: minmax(0,1fr) minmax(230px,.78fr); } }
@@ -637,7 +637,7 @@
 <div class="page-panel" style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div class="avatar" style="width:60px;height:60px;border-radius:19px;font-size:19px">CX</div><div style="flex:1;min-width:170px"><div id="profileMemberName" style="font-size:18px;font-weight:760;letter-spacing:-.4px">CKXchange member</div><div id="profileMemberEmail" style="color:var(--muted);font-size:11px;margin-top:5px">Sign in to view account</div><div style="margin-top:10px"><span class="live-badge">● Authenticated account</span></div></div><div style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:8px 10px">MEMBER</div></div></div>
 <div class="stats-grid"><div class="stat-card"><div class="stat-top">Total INR sent <svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="profileTotal">₹0</div><div class="stat-foot">Successful payouts</div></div><div class="stat-card"><div class="stat-top">Saved banks <svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBanks">0</div><div class="stat-foot">Linked destinations</div></div><div class="stat-card"><div class="stat-top">Wallet balance <svg fill="none" viewbox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" stroke-width="1.6" width="17" x="3.5" y="6"></rect><path d="M3.5 10h17M16 15h1" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBalance">0.0000</div><div class="stat-foot">Available USDT</div></div></div>
 <section class="page-panel"><h2 class="section-title">App settings</h2><p class="section-caption">Application details and your account controls.</p><div class="settings-list">
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.0</div></div>
+<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.1</div></div>
 </div>
 
 <section class="page-panel" id="contactSettingsPanel" style="margin-top:16px"><h2 class="section-title">Support contact details</h2><p class="section-caption">Add a Telegram username or numeric ID and phone number so CKXchange administrators can contact you if there is an issue with a deposit or payout. These details are visible to authorized administrators only.</p>
@@ -669,8 +669,8 @@
 <section class="receipt-modal">
 <div class="receipt-head"><button aria-label="Close receipt" class="modal-close" id="closeReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg></button><div class="success-mark"><svg fill="none" viewbox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.3"></path></svg></div><h2 id="receiptTitle">Payout Pending</h2><p>Your payout request is waiting for review.</p><div class="receipt-amount" id="receiptAmount">₹0.00</div><div class="receipt-amount-label">AMOUNT SENT · INR</div></div>
 <div class="receipt-body"><div class="receipt-section-title">Transaction details</div><div class="receipt-row"><span>Transaction ID</span><strong id="receiptId">—</strong></div><div class="receipt-row"><span>Date &amp; time</span><strong id="receiptDate">—</strong></div><div class="receipt-row"><span>Account holder</span><strong id="receiptHolder">—</strong></div><div class="receipt-row"><span>Bank name</span><strong id="receiptBank">—</strong></div><div class="receipt-row"><span>Branch</span><strong id="receiptBranch">—</strong></div><div class="receipt-row"><span>Account number</span><strong id="receiptAccount">—</strong></div><div class="receipt-row"><span>IFSC code</span><strong id="receiptIfsc">—</strong></div><div class="receipt-row"><span>Status</span><strong id="receiptStatus" style="color:var(--green)">Pending</strong></div></div>
-<div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button><div class="receipt-demo-note">CKXchange status receipt · Pending/processing is not proof of payment.</div></div>
+<div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button></div>
 </section>
 </div>
-<script defer="True" src="/app.js?v=2.4.0"></script></body>
+<script defer="True" src="/app.js?v=2.4.1"></script></body>
 </html>

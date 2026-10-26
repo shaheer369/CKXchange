@@ -64,3 +64,12 @@ For browser push, generate a key pair with `node scripts/generate-vapid.js`, the
 - Kept the mobile transaction list to three columns (Transaction, Amount, Status), with abbreviated transaction IDs, view-slip action, and date/time below the transaction reference.
 - Added an owner-targeted in-app/Web Push notification when a pending USDT deposit is approved and credited.
 - Enforced the USDT 10 minimum deposit and INR 1,000 minimum withdrawal at both frontend and backend.
+
+
+## v2.4.1 — payout-review and mobile receipt polish
+
+- Fixed mobile transaction history alignment: the View slip action aligns beside the transaction reference, and Successful/Processing status badges stay on one line.
+- Added an authenticated, owner-scoped, no-cache endpoint to retrieve a saved full account number only when opening the payout review step; normal bank listings remain masked.
+- Removed the Pending/Processing-not-proof disclaimer from the payout slip and review receipt footer. The PNG retains a neutral note identifying the receipt as the current CKXchange status.
+- Updated the static asset/service-worker cache version so deployed browsers fetch the refreshed UI.
+- Added static and integration assertions for owner-only payout review account details and the updated layout/disclaimer behavior.
