@@ -72,16 +72,86 @@
     const raw = String(value || '');
     return raw.length > 22 ? `${raw.slice(0, 12)}…${raw.slice(-8)}` : raw;
   };
+  const AUDIT_DETAIL_LABELS = {
+    requestedBy: 'Payout requester', requesterEmail: 'Requester email',
+    payoutAmountInr: 'Payout amount', amountInr: 'Payout amount',
+    usdtReserved: 'USDT reserved', amountUsdt: 'USDT amount',
+    accountHolder: 'Account holder', bankName: 'Destination bank', branchName: 'Branch',
+    accountNumber: 'Destination account', accountLast4: 'Destination account', ifscCode: 'IFSC code',
+    payoutStatus: 'Current transaction status', bankReference: 'Bank/provider reference',
+    txHash: 'TRC20 transaction hash', network: 'Deposit network', reason: 'Reason',
+    previousRate: 'Previous rate (INR/USDT)', newRate: 'New rate (INR/USDT)',
+    trc20Configured: 'TRC20 address configured', financialRecordsPreserved: 'Financial records preserved',
+    directProfileAndBankDataRemoved: 'Profile/bank data removed', previousConfigured: 'Support was configured',
+    newConfigured: 'Support is configured'
+  };
+  function auditActionLabel(action) {
+    const labels = {
+      payout_requested: 'Customer requested an INR payout',
+      payout_approved_processing: 'Payout approved and moved to Processing',
+      payout_marked_success_after_reference: 'Payout marked Successful',
+      payout_rejected_and_reserve_released: 'Payout rejected; reserved USDT released',
+      payout_failed_and_reserve_released: 'Payout marked Failed; reserved USDT released',
+      deposit_approved_manual_verification: 'USDT deposit approved',
+      deposit_rejected: 'USDT deposit rejected',
+      user_account_deleted: 'Customer account deleted',
+      exchange_rate_and_trc20_address_updated: 'Rate / TRC20 settings updated',
+      telegram_support_username_updated: 'Support Telegram updated'
+    };
+    return labels[action] || String(action || 'Audit event').replace(/_/g, ' ');
+  }
+  function auditDetailText(key, value) {
+    if (value === null || value === undefined || value === '') return '—';
+    if (['payoutAmountInr', 'amountInr'].includes(key)) return money(value);
+    if (['usdtReserved', 'amountUsdt'].includes(key)) return `${fmtNumber(value, 6)} USDT`;
+    if (key === 'payoutStatus') return statusText(value);
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  }
   function renderAuditDetails(details) {
     const entries = Object.entries(details && typeof details === 'object' && !Array.isArray(details) ? details : {});
     if (!entries.length) return '<div class="settings-desc">No additional details.</div>';
     return `<div class="audit-details">${entries.map(([key, value]) => {
-      const raw = typeof value === 'string' ? value : JSON.stringify(value);
+      const raw = typeof value === 'string' ? value : (value == null ? '' : JSON.stringify(value));
+      const label = AUDIT_DETAIL_LABELS[key] || String(key).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, char => char.toUpperCase());
       if (/tx.?hash|transaction.?hash/i.test(key) && raw) {
-        return `<div class="audit-detail-row"><span class="audit-detail-label">${safe(key)}</span><code class="audit-detail-hash" title="${safe(raw)}">${safe(shortHash(raw))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(raw)}" aria-label="Copy full ${safe(key)}">Copy hash</button></div>`;
+        return `<div class="audit-detail-row"><span class="audit-detail-label">${safe(label)}</span><code class="audit-detail-hash" title="${safe(raw)}">${safe(shortHash(raw))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(raw)}" aria-label="Copy full ${safe(label)}">Copy hash</button></div>`;
       }
-      return `<div class="audit-detail-row"><span class="audit-detail-label">${safe(key)}</span><span class="audit-detail-value">${safe(raw ?? '')}</span></div>`;
+      return `<div class="audit-detail-row"><span class="audit-detail-label">${safe(label)}</span><span class="audit-detail-value">${safe(auditDetailText(key, value))}</span></div>`;
     }).join('')}</div>`;
+  }
+  function renderAuditEntry(entry) {
+    const details = entry.details && typeof entry.details === 'object' ? entry.details : {};
+    const targetId = String(entry.targetId || '');
+    const isPayout = Boolean(entry.payoutLinked) && /^PAY-/i.test(targetId);
+    if (isPayout) {
+      const isAdmin = entry.actorRole === 'admin';
+      const actorLabel = isAdmin ? 'Admin' : 'Requester';
+      const actorName = isAdmin
+        ? (entry.adminName || entry.actorName || 'Unknown admin')
+        : (entry.actorName || 'Unknown requester');
+      const actorEmail = isAdmin ? (entry.adminEmail || entry.actorEmail || '') : (entry.actorEmail || '');
+      const amount = details.payoutAmountInr ?? details.amountInr ?? 0;
+      const accountNumber = details.accountNumber || details.accountLast4 || '—';
+      const accountHolder = details.accountHolder || '—';
+      return `<div class="settings-row audit-row audit-payout-row"><div class="settings-icon" aria-hidden="true">↗</div><div class="settings-content">
+        <div class="settings-name">${safe(auditActionLabel(entry.action))}</div>
+        <div class="audit-payout-meta"><span>${actorLabel}:</span> <strong>${safe(actorName)}</strong>${actorEmail ? ` <span>·</span> <span>${safe(actorEmail)}</span>` : ''}</div>
+        <div class="audit-payout-meta">${safe(dateText(entry.createdAt))}</div>
+        <div class="audit-payout-reference"><span>Transaction</span><code title="${safe(targetId)}">${safe(targetId)}</code></div>
+        <div class="audit-payout-fields">
+          <div class="audit-payout-field"><span>Account number</span><strong>${safe(accountNumber)}</strong></div>
+          <div class="audit-payout-field"><span>Name</span><strong>${safe(accountHolder)}</strong></div>
+          <div class="audit-payout-field"><span>Amount</span><strong>${safe(money(amount))}</strong></div>
+        </div>
+        <button type="button" class="transaction-slip-link audit-view-slip" data-view-admin-transaction="${safe(targetId)}" aria-label="View payout slip ${safe(targetId)}">View slip ↗</button>
+      </div></div>`;
+    }
+    const actorLabel = entry.actorRole === 'user' ? 'User' : 'Admin';
+    const actorName = entry.actorName || entry.adminName || (entry.actorRole === 'user' ? 'Deleted account' : 'Unknown admin');
+    const actorEmail = entry.actorEmail || entry.adminEmail || '';
+    return `<div class="settings-row audit-row"><div class="settings-icon">${entry.actorRole === 'user' ? '↗' : '✓'}</div><div class="settings-content"><div class="settings-name">${safe(auditActionLabel(entry.action))}</div><div class="settings-desc">${safe(actorLabel)}: ${safe(actorName)}${actorEmail ? ` · ${safe(actorEmail)}` : ''} · ${safe(dateText(entry.createdAt))}${entry.targetId ? ` · Transaction ${safe(entry.targetId)}` : ''}</div>${renderAuditDetails(details)}</div></div>`;
   }
   function toast(message, type = 'success') {
     const region = $('toastRegion'); if (!region) return;
@@ -542,19 +612,20 @@
     const status=t.status||'pending';
     const rows=[['TRANSACTION ID',t.id||'—'],['DATE & TIME',dateText(t.timestamp)],['ACCOUNT HOLDER',t.holder||'—'],['BANK',t.bank||'—'],['BRANCH',t.branch||'—'],['ACCOUNT NUMBER',String(t.account || '—')],['IFSC CODE',t.ifsc||'—'],['STATUS',statusText(status)]];
     if(t.bankReference) rows.push(['BANK REFERENCE',t.bankReference]); if(t.rejectionReason) rows.push(['REASON',t.rejectionReason]);
-    const lastRowY=500+(rows.length-1)*57;
-    const canvasHeight=lastRowY+140;
+    const lastRowY=435+(rows.length-1)*57;
+    const canvasHeight=lastRowY+100;
     const canvas=document.createElement('canvas'); canvas.width=1000; canvas.height=canvasHeight; const ctx=canvas.getContext('2d');
     const accent=status==='success'?'#61e6aa':status==='pending'?'#f0c477':status==='processing'?'#72b7ff':'#ff7792';
     const bg=ctx.createLinearGradient(0,0,1000,canvasHeight); bg.addColorStop(0,'#0d1020'); bg.addColorStop(1,'#101a2a'); ctx.fillStyle=bg; ctx.fillRect(0,0,1000,canvasHeight);
     const glow=ctx.createRadialGradient(500,100,20,500,100,600); glow.addColorStop(0,`${accent}20`); glow.addColorStop(1,'#10132100'); ctx.fillStyle=glow; ctx.fillRect(0,0,1000,550);
     ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.lineWidth=2; roundedRect(ctx,36,36,928,canvasHeight-72,34); ctx.stroke();
-    ctx.textAlign='center'; ctx.fillStyle='#b6a2ff'; ctx.font='700 24px Arial'; ctx.fillText('CKXchange',500,96);
-    ctx.fillStyle=accent; roundedRect(ctx,440,124,120,120,60); ctx.fill(); ctx.fillStyle='#101321'; ctx.font='700 64px Arial'; ctx.fillText(status==='success'?'✓':status==='pending'?'…':status==='processing'?'↻':'!',500,205);
-    ctx.fillStyle='#f5f6ff'; ctx.font='700 39px Arial'; ctx.fillText(`Payout ${statusText(status)}`,500,305);
-    ctx.fillStyle='#8e97b3'; ctx.font='500 20px Arial'; ctx.fillText('INR payout request receipt',500,344);
-    ctx.fillStyle='#fff'; ctx.font='700 58px Arial'; ctx.fillText(money(t.amount),500,430);
-    let y=500;
+    // Center the icon and all receipt headline content on the 1000px canvas.
+    ctx.textAlign='center';
+    ctx.fillStyle=accent; roundedRect(ctx,440,48,120,120,60); ctx.fill(); ctx.fillStyle='#101321'; ctx.font='700 64px Arial'; ctx.fillText(status==='success'?'✓':status==='pending'?'…':status==='processing'?'↻':'!',500,129);
+    ctx.fillStyle='#f5f6ff'; ctx.font='700 39px Arial'; ctx.fillText(`Payout ${statusText(status)}`,500,244);
+    ctx.fillStyle='#8e97b3'; ctx.font='500 20px Arial'; ctx.fillText('INR payout request receipt',500,282);
+    ctx.fillStyle='#fff'; ctx.font='700 58px Arial'; ctx.fillText(money(t.amount),500,367);
+    let y=435;
     for(const [label,value] of rows) {
       ctx.fillStyle='#8992ad'; ctx.font='600 17px Arial'; ctx.textAlign='left'; ctx.fillText(label,90,y);
       ctx.fillStyle=label==='STATUS'?accent:'#f0f1fc'; ctx.font='600 18px Arial'; ctx.textAlign='right';
@@ -563,7 +634,6 @@
       if(label!=='ACCOUNT NUMBER') while(ctx.measureText(textValue).width>max && textValue.length>6) textValue=textValue.slice(0,-4)+'…';
       ctx.fillText(textValue,910,y); ctx.strokeStyle='rgba(255,255,255,.075)'; ctx.beginPath(); ctx.moveTo(90,y+18); ctx.lineTo(910,y+18); ctx.stroke(); y+=57;
     }
-    ctx.textAlign='center'; ctx.fillStyle='#8b94ad'; ctx.font='500 15px Arial'; ctx.fillText('This receipt reflects the current status stored in CKXchange.',500,lastRowY+60);
     return canvas;
   }
   async function downloadReceiptImage(t) {
@@ -584,6 +654,14 @@
       currentReceipt = result.transaction;
       renderReceiptDetails(currentReceipt); $('receiptModal').classList.add('open'); $('closeReceipt').focus();
     } catch (error) { toast(error.message || 'Could not load your payout slip.', 'error'); }
+  }
+  async function openAdminReceipt(transactionId) {
+    if (!transactionId || !/^PAY-/i.test(String(transactionId))) return;
+    try {
+      const result = await request(`/api/admin/payouts/${encodeURIComponent(transactionId)}/receipt`);
+      currentReceipt = result.transaction;
+      renderReceiptDetails(currentReceipt); $('receiptModal').classList.add('open'); $('closeReceipt').focus();
+    } catch (error) { toast(error.message || 'Could not load the payout slip.', 'error'); }
   }
   function closeReceipt() { $('receiptModal').classList.remove('open'); currentReceipt=null; $('receiptAccount').textContent='—'; }
 
@@ -664,7 +742,7 @@
       } else if (activeAdminSubPage === 'audit') {
         const list = adminLists.audit;
         const data = await request(`/api/admin/audit?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
-        $('adminAuditRows').innerHTML = (data.entries || []).length ? data.entries.map(entry=>`<div class="settings-row audit-row"><div class="settings-icon">✓</div><div class="settings-content"><div class="settings-name">${safe(entry.action)}</div><div class="settings-desc">${safe(entry.adminName)}${entry.adminEmail ? ` · ${safe(entry.adminEmail)}` : ''} · ${safe(dateText(entry.createdAt))} · Target ${safe(entry.targetId||'—')}</div>${renderAuditDetails(entry.details)}</div></div>`).join('') : '';
+        $('adminAuditRows').innerHTML = (data.entries || []).length ? data.entries.map(renderAuditEntry).join('') : '';
         $('adminAuditEmpty').hidden = (data.entries || []).length !== 0;
         updateAdminPagination('audit', data.pagination);
       } else if (activeAdminSubPage === 'settings') {
@@ -729,6 +807,8 @@
       try { await request(`/api/banks/${encodeURIComponent(bank.id)}`,{method:'DELETE'}); await refreshState({quiet:true}); toast('Saved bank account removed.'); }
       catch(error){toast(error.message,'error');} return;
     }
+    const adminSlipButton=event.target.closest('[data-view-admin-transaction]');
+    if(adminSlipButton){await openAdminReceipt(adminSlipButton.dataset.viewAdminTransaction);return;}
     const slipButton=event.target.closest('[data-view-transaction]');
     if(slipButton){const txn=state.transactions.find(item=>item.id===slipButton.dataset.viewTransaction); if(txn&&txn.type==='payout') await openReceipt(txn); return;}
     const notificationButton=event.target.closest('[data-notification-open]'); if(notificationButton){const item=state.notifications.find(value=>value.id===notificationButton.dataset.notificationOpen); if(item) await openNotification(item); return;}

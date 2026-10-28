@@ -73,3 +73,21 @@ For browser push, generate a key pair with `node scripts/generate-vapid.js`, the
 - Removed the Pending/Processing-not-proof disclaimer from the payout slip and review receipt footer. The PNG retains a neutral note identifying the receipt as the current CKXchange status.
 - Updated the static asset/service-worker cache version so deployed browsers fetch the refreshed UI.
 - Added static and integration assertions for owner-only payout review account details and the updated layout/disclaimer behavior.
+
+
+## v2.4.2 — receipt cleanup and clearer audit log
+
+- Removed the CKXchange wordmark from the top of downloaded payout PNG slips and removed the footer sentence about status being stored in CKXchange; adjusted spacing so the remaining receipt content is balanced.
+- Added a customer audit event for each payout request, written in the same MongoDB transaction as the payout and USDT reservation.
+- Improved admin audit history with human-readable event names, actor/requester identity, INR amount, USDT reserved, destination account holder, bank, branch, masked account number, IFSC, current status, and bank reference where available.
+- Existing payout audit events are enriched from their linked transaction records when viewed, so earlier records become more useful without duplicating unencrypted bank-account numbers into audit storage.
+- Expanded audit search to include payout requester, bank, branch, IFSC, and account last four; bumped the PWA static asset cache version.
+
+
+## v2.4.3 — compact payout audit and aligned receipt
+
+- Replaced verbose payout audit detail lists with a compact row showing actor name/email, date/time, PAY transaction reference, account number, holder name, amount, and View slip. The actor is labeled Admin for admin actions and Requester for the initial user-created payout event.
+- Added a protected, no-cache admin receipt endpoint and reused the standard receipt modal/download flow from the audit log.
+- Full destination account numbers are joined from the linked transaction for authenticated admins and are not copied into persistent audit log details.
+- Centered the receipt icon, payout status heading, subtitle, and amount in the downloaded PNG.
+- Bumped versioned PWA assets/cache to v2.4.3.

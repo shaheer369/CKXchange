@@ -223,7 +223,11 @@ function transactionDto(row, admin = false) {
     timestamp: row.created_at, updatedAt: row.updated_at, userId: row.user_id };
 }
 async function audit(adminId, action, targetId, details = {}, session = null) {
-  const document = { _id: id('AUD'), admin_id: adminId, action, target_id: targetId || null, details, created_at: now() };
+  const document = { _id: id('AUD'), admin_id: adminId, actor_id: adminId, actor_role: 'admin', action, target_id: targetId || null, details, created_at: now() };
+  await db.collection('audit_log').insertOne(document, session ? { session } : {});
+}
+async function auditUser(userId, action, targetId, details = {}, session = null) {
+  const document = { _id: id('AUD'), admin_id: null, actor_id: userId, actor_role: 'user', action, target_id: targetId || null, details, created_at: now() };
   await db.collection('audit_log').insertOne(document, session ? { session } : {});
 }
 async function getUserState(userId) {
@@ -867,6 +871,12 @@ app.post('/api/payouts', requireAuth, mutationLimiter, async (req, res, next) =>
         branch_name: bank.branch_name, ifsc: bank.ifsc, created_at: created, updated_at: created };
       await db.collection('transactions').insertOne(txn, { session: mongoSession });
       await db.collection('ledger').insertOne({ _id: `${txId}:payout_reserve`, user_id: req.user._id, transaction_id: txId, entry_type: 'payout_reserve', available_delta_micro: -usdtMicro, reserved_delta_micro: usdtMicro, created_at: created }, { session: mongoSession });
+      // Record the customer request in the same transaction. Destination details are joined securely
+      // from the protected transaction record at audit-read time rather than duplicated in the log.
+      await auditUser(req.user._id, 'payout_requested', txId, {
+        payoutAmountInr: fromPaise(amountPaise),
+        usdtReserved: fromUsdtMicro(usdtMicro)
+      }, mongoSession);
       return txn;
     });
     res.status(201).json({ transaction: transactionDto(transaction), message: 'Payout request created and funds reserved. Status: Pending.' });
@@ -912,6 +922,17 @@ app.get('/api/admin/transactions', async (req, res, next) => {
     });
   } catch (error) { next(error); }
 });
+app.get('/api/admin/payouts/:id/receipt', async (req, res, next) => {
+  try {
+    const txn = await db.collection('transactions').findOne({ _id: req.params.id, type: 'payout' });
+    if (!txn) return apiError(res, 404, 'Payout receipt was not found.');
+    // This endpoint is protected by the /api/admin requireAuth + requireAdmin middleware.
+    // A no-store response prevents decrypted bank details from being retained by browser caches.
+    res.set('Cache-Control', 'no-store, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.json({ transaction: transactionDto(txn, true) });
+  } catch (error) { next(error); }
+});
 app.get('/api/admin/users', async (req, res, next) => {
   try {
     const { page: requestedPage, pageSize, q } = parseListParams(req);
@@ -929,17 +950,64 @@ app.get('/api/admin/audit', async (req, res, next) => {
     if (q) {
       const regex = new RegExp(escapedRegExp(q), 'i');
       const userIds = await matchingUserIds(q);
-      filter = { $or: [{ action: regex }, { target_id: regex }, { admin_id: regex }, ...(userIds.length ? [{ admin_id: { $in: userIds } }] : [])] };
+      const payoutSearch = [{ _id: regex }, { bank_holder: regex }, { bank_name: regex }, { branch_name: regex }, { bank_last4: regex }, { ifsc: regex }, { user_id: regex }];
+      if (userIds.length) payoutSearch.push({ user_id: { $in: userIds } });
+      const matchingPayouts = await db.collection('transactions').find(
+        { type: 'payout', $or: payoutSearch }, { projection: { _id: 1 } }
+      ).limit(500).toArray();
+      const matchingPayoutIds = matchingPayouts.map(row => row._id);
+      filter = { $or: [
+        { action: regex }, { target_id: regex }, { admin_id: regex }, { actor_id: regex },
+        ...(userIds.length ? [{ admin_id: { $in: userIds } }, { actor_id: { $in: userIds } }] : []),
+        ...(matchingPayoutIds.length ? [{ target_id: { $in: matchingPayoutIds } }] : [])
+      ] };
     }
     const total = await db.collection('audit_log').countDocuments(filter);
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
     const rows = await db.collection('audit_log').find(filter).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
-    const adminIds = [...new Set(rows.map(row => row.admin_id).filter(Boolean))];
-    const admins = adminIds.length ? await db.collection('users').find({ _id: { $in: adminIds } }, { projection: { name: 1, email: 1 } }).toArray() : [];
-    const map = new Map(admins.map(user => [user._id, user]));
-    res.json({ entries: rows.map(row => ({ id: row._id, action: row.action, targetId: row.target_id, details: row.details || {}, createdAt: row.created_at, adminName: map.get(row.admin_id)?.name || (row.actor_role === 'user' ? 'Deleted user' : 'Unknown admin'), adminEmail: map.get(row.admin_id)?.email || '' })), pagination: paginationDto(page, pageSize, total) });
+    const targetIds = [...new Set(rows.map(row => row.target_id).filter(Boolean))];
+    const payoutRows = targetIds.length ? await db.collection('transactions').find(
+      { _id: { $in: targetIds }, type: 'payout' }
+    ).toArray() : [];
+    const payoutMap = new Map(payoutRows.map(txn => [txn._id, txn]));
+    const identities = [...new Set([
+      ...rows.map(row => row.actor_id || row.admin_id).filter(Boolean),
+      ...payoutRows.map(txn => txn.user_id).filter(Boolean)
+    ])];
+    const people = identities.length ? await db.collection('users').find(
+      { _id: { $in: identities } }, { projection: { name: 1, email: 1, role: 1 } }
+    ).toArray() : [];
+    const peopleMap = new Map(people.map(user => [user._id, user]));
+    res.set('Cache-Control', 'no-store, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.json({ entries: rows.map(row => {
+      const actorId = row.actor_id || row.admin_id;
+      const actor = peopleMap.get(actorId);
+      const actorRole = row.actor_role || (row.admin_id ? 'admin' : 'user');
+      const payout = payoutMap.get(row.target_id);
+      const payoutOwner = payout ? peopleMap.get(payout.user_id) : null;
+      let details = row.details && typeof row.details === 'object' && !Array.isArray(row.details) ? { ...row.details } : {};
+      if (payout) {
+        // The audit database stores no decrypted account number. This protected, no-store admin
+        // response joins the full number from the encrypted payout record for the requested UI view.
+        details = {
+          ...details,
+          payoutAmountInr: fromPaise(payout.amount_paise),
+          accountHolder: payout.bank_holder || (payout.user_deleted ? 'Bank details removed' : ''),
+          accountNumber: payout.bank_cipher ? transactionDto(payout, true).account : (payout.bank_last4 ? accountMasked(payout.bank_last4) : (payout.user_deleted ? 'Bank details removed' : '—'))
+        };
+      }
+      return {
+        id: row._id, action: row.action, targetId: row.target_id, payoutLinked: Boolean(payout), details, createdAt: row.created_at,
+        actorRole, actorName: actor?.name || (actorRole === 'user' ? 'Deleted account' : 'Unknown admin'),
+        actorEmail: actor?.email || '',
+        adminName: peopleMap.get(row.admin_id)?.name || (row.actor_role === 'user' ? 'Deleted user' : 'Unknown admin'),
+        adminEmail: peopleMap.get(row.admin_id)?.email || ''
+      };
+    }), pagination: paginationDto(page, pageSize, total) });
   } catch (error) { next(error); }
 });
+
 app.post('/api/admin/deposits/:id/approve', mutationLimiter, async (req, res, next) => {
   try {
     const result = await runTransaction(async mongoSession => {

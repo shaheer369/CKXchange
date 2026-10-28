@@ -273,4 +273,22 @@ The full account number on a payout slip is returned by a dedicated no-cache end
 
 - Mobile transaction history keeps status badges on one line and aligns the View slip action with the transaction ID.
 - Payout review now displays the complete saved account number through a dedicated owner-scoped, no-cache endpoint. Bulk bank listings remain masked; the new endpoint returns only the selected account number.
-- Removed the Pending/Processing disclaimer from payout slip output.
+- Removed the Pending/Processing-not-proof disclaimer from the payout slip. v2.4.1 still included a separate neutral status note; that note is removed in v2.4.2.
+
+
+## v2.4.2 receipt and audit-log improvements
+
+- Downloaded payout slips no longer include the CKXchange heading at the top or the CKXchange status sentence at the bottom.
+- The admin audit log now records the customer payout request in the same transaction as the payout reservation, shows a readable action name and actor, and joins the linked payout to display the requester, INR amount, reserved USDT, destination bank/holder/branch, masked account number, IFSC, current status, and bank reference where available.
+- Audit searches can match the payout requester, bank, branch, IFSC, or account last four. Full account numbers are not copied into permanent audit details; the destination is identified with the masked account number and bank coordinates.
+- Versioned PWA assets were bumped to v2.4.2 to refresh cached JavaScript.
+- Fresh npm installs pin the transitive `body-parser` dependency to the patched 2.4.x line through an npm override.
+
+
+## v2.4.3 — compact payout audit and receipt alignment
+
+- Simplified payout audit rows to show the action, admin/requester identity and email, date/time, full PAY transaction reference, destination account number, account holder name, amount, and a View slip action.
+- Added an admin-only, no-cache payout receipt endpoint so authorized administrators can open the same slip modal and download the receipt from audit history.
+- Audit rows retrieve destination account numbers from the linked payout record at read time; full numbers are not written into permanent audit details.
+- Corrected downloaded PNG receipt alignment by centering the status icon, title, subtitle, and payout amount on the canvas.
+- Bumped PWA asset/cache version to 2.4.3.

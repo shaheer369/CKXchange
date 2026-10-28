@@ -6,6 +6,7 @@ const html = fs.readFileSync(path.join(root, 'views', 'index.html'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const domain = fs.readFileSync(path.join(root, 'lib', 'domain.js'), 'utf8');
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(match => match[1]);
 const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
 if (duplicates.length) {
@@ -108,6 +109,11 @@ const securityChecks = [
   [js.includes('async function openPayoutReview(bankId, amountInr)') && js.includes('function submitReviewedPayout()') && html.includes('id="payoutReviewModal"') && js.includes("request('/api/payouts', { method:'POST', body:payload })"), 'Payout submission must use a review-and-confirm step.'],
   [html.includes('<th>Transaction</th><th>Amount</th><th>Status</th>') && !/customer-history-table[\s\S]*?<th>USDT<\/th>/.test(html) && js.includes('history-transaction-date') && html.includes('.customer-history-table { min-width: 0; width: 100%; table-layout: fixed; }'), 'Customer transaction history must fit a three-column mobile layout without a USDT column.'],
   [server.includes('queueDepositApprovedNotification(mongoSession, transaction)') && server.includes("'deposit_approved'") && server.includes('deliverPushOutbox(result.notificationIds)'), 'Approved deposits must queue an owner-scoped in-app/push notification.'],
+  [server.includes('async function auditUser(userId, action, targetId') && server.includes("'payout_requested'") && server.includes('payoutAmountInr: fromPaise(payout.amount_paise)') && server.includes('const payoutMap = new Map') && server.includes('accountNumber: payout.bank_cipher ? transactionDto(payout, true).account') && server.includes('payoutLinked: Boolean(payout)') && js.includes('Payout requester') && js.includes('Customer requested an INR payout'), 'The admin audit log must record payout requests and retrieve destination account details from the linked transaction for authorized administrators.'],
+  [packageJson.version === '2.4.3' && packageJson.overrides?.['body-parser'] === '^2.4.0', 'Release 2.4.3 must retain the patched body-parser 2.4.x transitive dependency.'],
+  [server.includes("app.get('/api/admin/payouts/:id/receipt'") && server.includes('transaction: transactionDto(txn, true)') && server.includes("res.set('Cache-Control', 'no-store, max-age=0')"), 'Admin payout receipt must use a privileged no-cache route and the full slip DTO.'],
+  [js.includes('function renderAuditEntry(entry)') && js.includes('data-view-admin-transaction=') && js.includes('data-view-admin-transaction') && js.includes('async function openAdminReceipt') && js.includes('Account number') && js.includes('View slip'), 'Payout audit rows must be compact and provide a working View slip action.'],
+  [js.includes("ctx.textAlign='center'") && js.includes('ctx.fillText(`Payout ${statusText(status)}`,500,244)'), 'Downloaded payout slips must center their headline and amount.'],
   [server.includes("app.post('/api/banks'") && (server.match(/role: \{ \$in: \['user', 'admin'\] \}, status: 'active'/g) || []).length >= 3 && !server.includes("const active = await db.collection('users').updateOne({ _id: req.user._id, role: { $in: ['user', 'admin'] }, status: 'active' }, { $inc: { activity_seq: 1 } }"), 'Active administrators must be allowed to use their own bank, deposit, and payout workflow without a dummy activity counter write.']
 ];
 for (const [ok, message] of securityChecks) {
@@ -119,6 +125,11 @@ if (!html.includes('.transaction-slip-link') || !html.includes('margin-top: 0;')
 }
 if (html.includes('receipt-demo-note') || html.includes('Pending/processing is not proof of payment.') || js.includes('PENDING / PROCESSING IS NOT PROOF OF PAYMENT')) {
   console.error('The removed payout-slip disclaimer is still present.');
+  process.exit(1);
+}
+const receiptCode = js.slice(js.indexOf('function createReceiptCanvas'), js.indexOf('async function downloadReceiptImage'));
+if (receiptCode.includes("fillText('CKXchange'") || receiptCode.includes('This receipt reflects the current status stored in CKXchange.')) {
+  console.error('Downloaded payout slips must not include the CKXchange heading or status footer sentence.');
   process.exit(1);
 }
 console.log(`Checks passed: ${ids.length} unique HTML IDs, ${new Set(references).size} resolved static JS ID references, and ${securityChecks.length} security invariants.`);

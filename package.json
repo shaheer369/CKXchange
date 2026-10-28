@@ -1,6 +1,6 @@
 {
   "name": "ckxchange-fullstack",
-  "version": "2.4.1",
+  "version": "2.4.3",
   "private": true,
   "description": "CKXchange prepared for Vercel Functions and MongoDB Atlas, with protected admin panel and deposit/payout workflows",
   "main": "server.js",
@@ -24,5 +24,8 @@
     "express-session": "^1.18.1",
     "helmet": "^8.1.0",
     "mongodb": "^7.7.0"
+  },
+  "overrides": {
+    "body-parser": "^2.4.0"
   }
 }
