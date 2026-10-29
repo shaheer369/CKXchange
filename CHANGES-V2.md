@@ -100,3 +100,12 @@ For browser push, generate a key pair with `node scripts/generate-vapid.js`, the
 - Added a MAX button that fills the payout amount with the smaller of the available INR value and the ₹100,000 per-request cap; rounding ensures the amount does not overrun available micro-USDT.
 - Enforced the ₹100,000 maximum in the server payout endpoint as well as the client form.
 - Bumped PWA asset cache/version strings so installed apps fetch the updated UI.
+
+
+## v2.4.5 — refreshed CKX logos
+
+- Replaced the PWA launcher, browser favicon, Apple touch icon, manifest icons, and Web Push notification icon assets with the new square CKX logo.
+- Replaced the sign-in, desktop sidebar, and mobile header inline SVG marks with the new transparent USDT/INR exchange symbol.
+- Removed the old gradient tile and shadow from in-app marks so the supplied transparent icon displays cleanly.
+- Bumped versioned assets and the service-worker cache, and precached the new in-app icon sizes to avoid stale branding in installed PWAs.
+- Retained the patched body-parser 2.4.x dependency override.
