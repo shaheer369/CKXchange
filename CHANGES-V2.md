@@ -91,3 +91,12 @@ For browser push, generate a key pair with `node scripts/generate-vapid.js`, the
 - Full destination account numbers are joined from the linked transaction for authenticated admins and are not copied into persistent audit log details.
 - Centered the receipt icon, payout status heading, subtitle, and amount in the downloaded PNG.
 - Bumped versioned PWA assets/cache to v2.4.3.
+
+## v2.4.4 — payout cap, MAX amount, account search and bank-form polish
+
+- Removed duplicate literal plus signs from the Add bank buttons while keeping the SVG plus icon.
+- Updated IFSC help copy to explain automatic bank/branch lookup without naming a provider.
+- Added admin payout-queue search by exact full account number or last four digits.
+- Added a MAX button that fills the payout amount with the smaller of the available INR value and the ₹100,000 per-request cap; rounding ensures the amount does not overrun available micro-USDT.
+- Enforced the ₹100,000 maximum in the server payout endpoint as well as the client form.
+- Bumped PWA asset cache/version strings so installed apps fetch the updated UI.

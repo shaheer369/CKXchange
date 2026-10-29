@@ -546,13 +546,24 @@
   }
   function renderAll() { renderBanks(); renderTransactions(); updateSendEstimate(); updateDepositEstimate(); }
   function refreshSendPage() { renderBanks(); updateSendEstimate(); }
+  const MAX_PAYOUT_INR = 100_000;
+  function maxPayoutAmountInr() {
+    const availableMicro = Math.max(0, Math.round((Number(state.balance) || 0) * 1_000_000));
+    if (!Number.isFinite(state.rate) || state.rate <= 0 || availableMicro <= 0) return 0;
+    let paise = Math.min(MAX_PAYOUT_INR * 100, Math.max(0, Math.floor((availableMicro / 1_000_000) * state.rate * 100 + 1e-8)));
+    // Keep the rounded rupee amount within the exact available micro-USDT balance,
+    // matching the server's ceiling conversion before reserving funds.
+    while (paise > 0 && Math.ceil((paise / 100 / state.rate) * 1_000_000 - 1e-9) > availableMicro) paise -= 1;
+    return paise / 100;
+  }
   function updateSendEstimate() {
     const raw = $('sendAmount').value.trim(); const amount = Number(raw); const available = Math.max(0, state.balance * state.rate);
     const status = $('sendAmountStatus'); const remaining = $('sendRemainingInr');
-    if (!raw || !Number.isFinite(amount) || amount <= 0) { remaining.textContent='—'; status.className='lookup-status'; status.textContent=`Minimum withdrawal is ₹1,000. Available payout value: ${money(available)}.`; return; }
+    if (!raw || !Number.isFinite(amount) || amount <= 0) { remaining.textContent='—'; status.className='lookup-status'; status.textContent=`Minimum withdrawal is ₹1,000; maximum is ₹${money(MAX_PAYOUT_INR)} per request. Available payout value: ${money(available)}.`; return; }
     if (amount < 1000) { remaining.textContent=money(Math.max(0, available - amount)); status.className='lookup-status error'; status.textContent='Minimum withdrawal is ₹1,000.'; return; }
+    if (amount > MAX_PAYOUT_INR) { remaining.textContent='Over per-request limit'; status.className='lookup-status error'; status.textContent=`Maximum payout per request is ${money(MAX_PAYOUT_INR)}.`; return; }
     if (amount > available + 1e-7) { remaining.textContent='Insufficient balance'; status.className='lookup-status error'; status.textContent=`This exceeds your available payout value of ${money(available)}.`; return; }
-    remaining.textContent = money(Math.max(0, available - amount)); status.className='lookup-status success'; status.textContent=`Available payout value: ${money(available)}. Final validation happens on the server.`;
+    remaining.textContent = money(Math.max(0, available - amount)); status.className='lookup-status success'; status.textContent=`Available payout value: ${money(available)}. Maximum per request: ${money(MAX_PAYOUT_INR)}.`;
   }
   function updateDepositEstimate() {
     const amount = Math.max(0, Number($('depositAmount')?.value) || 0);
@@ -584,7 +595,7 @@
       $('depositAddressStatus').className='lookup-status error'; $('depositAddressStatus').textContent=error.message;
     }
   }
-  function ifscClear(message = 'Bank details will be looked up automatically.') {
+  function ifscClear(message = 'Enter a valid IFSC code to fetch the bank and branch details automatically.') {
     $('bankName').value = ''; $('branchName').value = ''; $('ifscStatus').className='lookup-status'; $('ifscStatus').textContent=message; $('saveBankBtn').disabled=true;
   }
   async function lookupIfsc(code) {
@@ -919,6 +930,12 @@
   });
   $('helpButton').addEventListener('click',()=>toast('CKXchange uses a backend database. Blockchain deposits still require independent admin verification, and payouts are manually completed through an authorized bank/provider.'));
   $('sendAmount').addEventListener('input',updateSendEstimate);
+  $('sendMax').addEventListener('click', () => {
+    const amount = maxPayoutAmountInr();
+    if (amount <= 0) { toast('No available payout balance to use.', 'error'); return; }
+    $('sendAmount').value = amount.toFixed(2);
+    updateSendEstimate();
+  });
   $('bankForm').addEventListener('input',event=>{
     if(event.target.id==='holderName') event.target.value=event.target.value.toLocaleUpperCase('en-IN').replace(/[^\p{L}\s.'-]/gu,'').replace(/\s{2,}/g,' ').slice(0,80);
     if(event.target.id==='accountNumber') event.target.value=event.target.value.replace(/[^0-9]/g,'').slice(0,24);
@@ -986,6 +1003,7 @@
     const amountInr = Number($('sendAmount').value);
     if (!bankId) { toast('Choose a saved bank account first.', 'error'); return; }
     if (!Number.isFinite(amountInr) || amountInr < 1000) { toast('Minimum withdrawal is ₹1,000.', 'error'); return; }
+    if (amountInr > MAX_PAYOUT_INR) { toast('Maximum payout per request is ₹100,000.', 'error'); return; }
     if (amountInr > state.balance * state.rate + 1e-7) { toast('Insufficient available USDT balance for this payout.', 'error'); return; }
     openPayoutReview(bankId, amountInr);
   });

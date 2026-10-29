@@ -292,3 +292,13 @@ The full account number on a payout slip is returned by a dedicated no-cache end
 - Audit rows retrieve destination account numbers from the linked payout record at read time; full numbers are not written into permanent audit details.
 - Corrected downloaded PNG receipt alignment by centering the status icon, title, subtitle, and payout amount on the canvas.
 - Bumped PWA asset/cache version to 2.4.3.
+
+
+## v2.4.4 — payout cap, MAX amount, account search and bank-form polish
+
+- Removed duplicate literal plus signs from the Add bank buttons while keeping the SVG plus icon.
+- Updated IFSC help copy to explain automatic bank/branch lookup without naming a provider.
+- Added admin payout-queue search by exact full account number or last four digits.
+- Added a MAX button that fills the payout amount with the smaller of the available INR value and the ₹100,000 per-request cap; rounding ensures the amount does not overrun available micro-USDT.
+- Enforced the ₹100,000 maximum in the server payout endpoint as well as the client form.
+- Bumped PWA asset cache/version strings so installed apps fetch the updated UI.

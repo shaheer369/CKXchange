@@ -6,8 +6,8 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#090b13" name="theme-color"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
-<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.3"/>
-<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.3"/>
+<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.4"/>
+<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.4"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="CKXchange"/>
@@ -182,6 +182,10 @@
     .button-row { display: flex; gap: 10px; margin-top: 21px; }
     .button-row > * { flex: 1; }
     .send-layout { display: grid; grid-template-columns: minmax(0, 780px); gap: 16px; align-content: start; }
+    .send-amount-label { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
+    .send-amount-label label { margin:0; }
+    .send-max-btn { flex:0 0 auto; min-height:28px; border:1px solid rgba(169,147,255,.38); border-radius:8px; padding:0 11px; color:#cbbdff; background:rgba(139,92,246,.10); font-size:10px; font-weight:800; letter-spacing:.5px; cursor:pointer; }
+    .send-max-btn:hover { background:rgba(139,92,246,.18); }
     .send-panel-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 23px; }
     .send-panel-header .form-heading { margin: 0; min-width: 0; flex: 1; }
     .add-bank-top-btn { flex: 0 0 auto; min-height: 40px; padding: 0 12px; border-radius: 12px; white-space: nowrap; }
@@ -523,11 +527,11 @@
 <div class="page-panel">
 <div class="send-panel-header">
 <div class="form-heading"><h2>Send money to bank</h2><p>Choose a saved account and enter an INR amount.</p></div>
-<button aria-label="Add bank account" class="secondary-btn add-bank-top-btn" data-go="addbank" type="button"><svg aria-hidden="true" fill="none" viewbox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg>+ Bank</button>
+<button aria-label="Add bank account" class="secondary-btn add-bank-top-btn" data-go="addbank" type="button"><svg aria-hidden="true" fill="none" viewbox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg>Bank</button>
 </div>
 <form id="sendForm">
 <div class="field"><label for="sendBank">Pay to bank account</label><select id="sendBank" required=""><option value="">Select a saved bank</option></select></div>
-<div class="field"><label for="sendAmount">Amount to send <span class="field-hint">Indian Rupees</span></label><div class="input-wrap"><input class="input-with-icon" id="sendAmount" inputmode="decimal" min="1000" placeholder="e.g. 5,000.00" required="" step="0.01" type="number"/><span class="input-suffix">INR ₹</span></div><div class="lookup-status" id="sendAmountStatus">Minimum withdrawal is ₹1,000.</div><div class="send-inline-estimate"><div><span class="send-inline-label">Remaining INR after payout</span><strong id="sendRemainingInr">—</strong></div></div></div>
+<div class="field"><div class="send-amount-label"><label for="sendAmount">Amount to send <span class="field-hint">Indian Rupees</span></label><button class="send-max-btn" id="sendMax" type="button">MAX</button></div><div class="input-wrap"><input class="input-with-icon" id="sendAmount" inputmode="decimal" max="100000" min="1000" placeholder="e.g. 5,000.00" required="" step="0.01" type="number"/><span class="input-suffix">INR ₹</span></div><div class="lookup-status" id="sendAmountStatus">Minimum withdrawal is ₹1,000; maximum is ₹100,000 per request.</div><div class="send-inline-estimate"><div><span class="send-inline-label">Remaining INR after payout</span><strong id="sendRemainingInr">—</strong></div></div></div>
 <div class="helper-box"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"></circle><path d="M12 11v5m0-8h.01" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg><span>Payout requests remain pending until an authorized admin records a verified bank transfer.</span></div>
 <button class="primary-btn full" id="sendSubmit" type="submit"><svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Review payout</button>
 </form>
@@ -539,28 +543,28 @@
 <section class="page-panel">
 <div class="send-panel-header">
 <div class="form-heading"><h2>Saved bank accounts</h2><p>View linked account details, add another bank, or remove an account you no longer need.</p></div>
-<button aria-label="Add a bank account" class="primary-btn add-bank-top-btn" data-go="addbank" type="button"><svg aria-hidden="true" fill="none" viewbox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg>+ Add bank</button>
+<button aria-label="Add a bank account" class="primary-btn add-bank-top-btn" data-go="addbank" type="button"><svg aria-hidden="true" fill="none" viewbox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg>Add bank</button>
 </div>
 <div class="saved-bank-list" id="managementBankList"></div>
 </section>
 </section>
 <section aria-label="Add bank account" class="page" id="page-addbank">
 <div class="two-col">
-<div class="page-panel"><div class="form-heading"><h2>Link a bank account</h2><p>Add the account holder and banking details. Enter a valid 11-character IFSC to look up the bank and branch name.</p></div>
+<div class="page-panel"><div class="form-heading"><h2>Link a bank account</h2><p>Add the account holder and banking details. Enter a valid IFSC code to fetch the bank and branch details automatically.</p></div>
 <form autocomplete="off" id="bankForm">
 <div class="field"><label for="holderName">1. Account holder name <span class="field-hint">CAPITAL LETTERS</span></label><input aria-describedby="holderNameHint" autocapitalize="characters" autocomplete="name" class="uppercase-input" id="holderName" maxlength="80" name="holderName" placeholder="FULL NAME AS REGISTERED WITH BANK" required="" type="text"/><div class="lookup-status" id="holderNameHint">Letters only; numbers are removed automatically.</div></div>
 <div class="field"><label for="accountNumber">2. Account number</label><input autocomplete="off" id="accountNumber" inputmode="numeric" maxlength="24" name="accountNumber" pattern="[0-9]{6,24}" placeholder="Enter bank account number" required="" title="Enter 6 to 24 digits" type="text"/></div>
-<div class="field"><label for="ifscCode">3. IFSC code <span class="field-hint">11 characters</span></label><input aria-describedby="ifscStatus" autocapitalize="characters" autocomplete="off" class="input-with-icon" id="ifscCode" maxlength="11" name="ifscCode" placeholder="e.g. HDFC0001234" required="" spellcheck="false" type="text"/><div aria-live="polite" class="lookup-status" id="ifscStatus">Bank details will be looked up automatically.</div></div>
+<div class="field"><label for="ifscCode">3. IFSC code <span class="field-hint">11 characters</span></label><input aria-describedby="ifscStatus" autocapitalize="characters" autocomplete="off" class="input-with-icon" id="ifscCode" maxlength="11" name="ifscCode" placeholder="e.g. HDFC0001234" required="" spellcheck="false" type="text"/><div aria-live="polite" class="lookup-status" id="ifscStatus">Enter a valid IFSC code to fetch the bank and branch details automatically.</div></div>
 <div class="field"><label for="bankName">4. Bank name <span class="field-hint">Auto-fetched</span></label><input id="bankName" name="bankName" placeholder="Filled after IFSC lookup" readonly="" required="" type="text"/></div>
 <div class="field"><label for="branchName">5. Branch name <span class="field-hint">Auto-fetched</span></label><input id="branchName" name="branchName" placeholder="Filled after IFSC lookup" readonly="" required="" type="text"/></div>
 <div class="helper-box"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.7 3 7.4 7.5 9.5 4.5-2.1 7.5-4.8 7.5-9.5V6L12 3Z" stroke="currentColor" stroke-width="1.6"></path><path d="M12 8v4m0 3h.01" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"></path></svg><span>Bank account details are stored on the server and encrypted in the database. Only use accounts you are authorized to manage.</span></div>
 <div class="button-row"><button class="secondary-btn" data-go="bankreturn" type="button">Cancel</button><button class="primary-btn" disabled="" id="saveBankBtn" type="submit">Save bank account</button></div>
 </form>
 </div>
-<div><section class="page-panel"><div class="form-heading"><h2>Bank details checklist</h2><p>Add the account holder and banking details. Enter a valid 11-character IFSC to look up the bank and branch name.</p></div>
+<div><section class="page-panel"><div class="form-heading"><h2>Bank details checklist</h2><p>Add the account holder and banking details. Enter a valid IFSC code to fetch the bank and branch details automatically.</p></div>
 <div class="settings-list"><div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><path d="M4 9h16M6 9V19h12V9M3 19h18M12 3 3 8h18L12 3Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="settings-content"><div class="settings-name">Account holder</div><div class="settings-desc">Use the full name associated with the account.</div></div></div>
 <div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" stroke-width="1.6" width="16" x="4" y="5"></rect><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div class="settings-content"><div class="settings-name">Account number</div><div class="settings-desc">Use digits only. Double-check before saving.</div></div></div>
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="settings-content"><div class="settings-name">IFSC verification</div><div class="settings-desc">Bank and branch names are retrieved from Razorpay's public IFSC API.</div></div></div></div>
+<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="settings-content"><div class="settings-name">IFSC verification</div><div class="settings-desc">Enter a valid IFSC code to fetch the bank and branch details automatically.</div></div></div></div>
 </section><section class="page-panel"><h2 class="section-title">Already linked</h2><div class="section-caption" id="addBankSavedCount" style="margin-bottom:13px">0 saved accounts</div><button class="secondary-btn full" data-go="banks">Manage saved accounts</button></section></div>
 </div>
 </section>
@@ -612,7 +616,7 @@
 </section>
 <section class="admin-subpage" data-admin-subpage="payouts" hidden id="adminPagePayouts">
 <section class="page-panel admin-section"><div class="section-row" style="margin-top:0"><div><h2 class="section-title">INR payout requests</h2><div class="section-caption">Pending requests are shown first. Processing payouts remain reserved until they are completed, rejected, or failed.</div></div><button class="secondary-btn" data-admin-refresh="">Refresh</button></div>
-<form class="admin-list-toolbar" id="adminPayoutsSearchForm"><input aria-label="Search payouts" autocomplete="off" id="adminPayoutsSearch" maxlength="80" placeholder="Search transaction ID, user name, or email"><button class="secondary-btn" type="submit">Search</button></form>
+<form class="admin-list-toolbar" id="adminPayoutsSearchForm"><input aria-label="Search payouts" autocomplete="off" id="adminPayoutsSearch" maxlength="80" placeholder="Search transaction ID, user, email, or account number (full or last 4)"><button class="secondary-btn" type="submit">Search</button></form>
 <div class="admin-table-wrap"><table class="history-table admin-table"><thead><tr><th>User / bank</th><th>Amount</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="adminPayoutRows"></tbody></table></div><div class="empty-state" hidden id="adminPayoutsEmpty"><div class="empty-title">No matching pending payouts</div><div class="empty-desc">Try a different search or refresh the queue.</div></div>
 <div aria-label="Payout request pagination" class="admin-pagination"><span id="adminPayoutsPageInfo">Page 1 of 1 · 0 records</span><div class="admin-pagination-controls"><button class="secondary-btn" data-admin-page-prev="payouts" disabled type="button">Previous</button><button class="secondary-btn" data-admin-page-next="payouts" disabled type="button">Next</button></div></div></section>
 </section>
@@ -650,7 +654,7 @@
 <div class="page-panel" style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div class="avatar" style="width:60px;height:60px;border-radius:19px;font-size:19px">CX</div><div style="flex:1;min-width:170px"><div id="profileMemberName" style="font-size:18px;font-weight:760;letter-spacing:-.4px">CKXchange member</div><div id="profileMemberEmail" style="color:var(--muted);font-size:11px;margin-top:5px">Sign in to view account</div><div style="margin-top:10px"><span class="live-badge">● Authenticated account</span></div></div><div style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:8px 10px">MEMBER</div></div></div>
 <div class="stats-grid"><div class="stat-card"><div class="stat-top">Total INR sent <svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="profileTotal">₹0</div><div class="stat-foot">Successful payouts</div></div><div class="stat-card"><div class="stat-top">Saved banks <svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBanks">0</div><div class="stat-foot">Linked destinations</div></div><div class="stat-card"><div class="stat-top">Wallet balance <svg fill="none" viewbox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" stroke-width="1.6" width="17" x="3.5" y="6"></rect><path d="M3.5 10h17M16 15h1" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBalance">0.0000</div><div class="stat-foot">Available USDT</div></div></div>
 <section class="page-panel"><h2 class="section-title">App settings</h2><p class="section-caption">Application details and your account controls.</p><div class="settings-list">
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.3</div></div>
+<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.4</div></div>
 </div>
 
 <section class="page-panel" id="contactSettingsPanel" style="margin-top:16px"><h2 class="section-title">Support contact details</h2><p class="section-caption">Add a Telegram username or numeric ID and phone number so CKXchange administrators can contact you if there is an issue with a deposit or payout. These details are visible to authorized administrators only.</p>
@@ -685,5 +689,5 @@
 <div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button></div>
 </section>
 </div>
-<script defer="True" src="/app.js?v=2.4.3"></script></body>
+<script defer="True" src="/app.js?v=2.4.4"></script></body>
 </html>

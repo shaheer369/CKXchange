@@ -94,7 +94,7 @@ async function waitForStart(proc, origin) {
   assert.equal(manifest.response.status, 200, 'PWA manifest should be served');
   assert.match(manifest.text, /\"display\": \"standalone\"/, 'PWA should use an installable standalone display mode');
   assert.match(manifest.text, /ckx-logo-512\.png/, 'PWA manifest should use the CKX brand logo');
-  const logoResponse = await fetch(`${origin}/icons/ckx-logo-192.png?v=2.4.3`);
+  const logoResponse = await fetch(`${origin}/icons/ckx-logo-192.png?v=2.4.4`);
   assert.equal(logoResponse.status, 200, 'CKX PWA logo must be served as a static asset');
   assert.match(logoResponse.headers.get('content-type') || '', /image\/png/, 'CKX PWA logo must be served as PNG');
   const serviceWorker = await api(origin, '/service-worker.js');

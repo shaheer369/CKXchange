@@ -24,6 +24,7 @@ const APP_ORIGIN = String(process.env.APP_ORIGIN || '').trim().replace(/\/+$/, '
 const RATE_DEFAULT = Number(process.env.INR_PER_USDT || 106);
 const MIN_DEPOSIT_USDT = 10;
 const MIN_PAYOUT_INR = 1000;
+const MAX_PAYOUT_INR = 100_000;
 const IS_PROD = process.env.NODE_ENV === 'production';
 const MONGODB_URI = String(process.env.MONGODB_URI || '').trim();
 const DB_NAME = String(process.env.MONGODB_DB || 'ckxchange').trim();
@@ -851,7 +852,7 @@ app.post('/api/payouts', requireAuth, mutationLimiter, async (req, res, next) =>
   try {
     const amount = Number(req.body?.amountInr);
     const bankId = String(req.body?.bankId || '');
-    if (!Number.isFinite(amount) || amount < MIN_PAYOUT_INR || amount > 100_000_000) return apiError(res, 400, 'Minimum INR withdrawal is ₹1,000. Enter a payout amount from ₹1,000 up to the transaction limit.');
+    if (!Number.isFinite(amount) || amount < MIN_PAYOUT_INR || amount > MAX_PAYOUT_INR) return apiError(res, 400, 'Minimum INR withdrawal is ₹1,000 and maximum is ₹100,000 per payout request.');
     const bank = await db.collection('banks').findOne({ _id: bankId, user_id: req.user._id });
     if (!bank) return apiError(res, 400, 'Choose a saved bank account.');
     const amountPaise = toPaise(amount);
@@ -907,7 +908,26 @@ app.get('/api/admin/transactions', async (req, res, next) => {
     if (q) {
       const regex = new RegExp(escapedRegExp(q), 'i');
       const userIds = await matchingUserIds(q);
-      filter = { $and: [filter, { $or: [{ _id: regex }, { tx_hash: regex }, { user_id: regex }, ...(userIds.length ? [{ user_id: { $in: userIds } }] : [])] }] };
+      const searchConditions = [{ _id: regex }, { tx_hash: regex }, { user_id: regex }, ...(userIds.length ? [{ user_id: { $in: userIds } }] : [])];
+      if (type === 'payout') {
+        // Account numbers are encrypted at rest, so filter by last four digits first,
+        // then decrypt only the protected admin-side candidates to support exact full-number search.
+        searchConditions.push({ bank_last4: regex });
+        if (/^\d{4,24}$/.test(q)) {
+          const last4 = q.slice(-4);
+          const accountCandidates = await db.collection('transactions').find(
+            { type: 'payout', status: { $in: ['pending', 'processing'] }, bank_last4: last4 },
+            { projection: { _id: 1, bank_cipher: 1, bank_last4: 1 } }
+          ).toArray();
+          const accountMatchIds = accountCandidates.filter(row => {
+            if (q.length === 4) return row.bank_last4 === q;
+            if (!row.bank_cipher) return false;
+            try { return decryptAccount(row.bank_cipher) === q; } catch (_) { return false; }
+          }).map(row => row._id);
+          if (accountMatchIds.length) searchConditions.push({ _id: { $in: accountMatchIds } });
+        }
+      }
+      filter = { $and: [filter, { $or: searchConditions }] };
     }
     const total = await db.collection('transactions').countDocuments(filter);
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
