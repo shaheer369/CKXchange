@@ -507,6 +507,37 @@ app.post('/api/auth/login', authLimiter, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: userDto(req.user) }));
+app.post('/api/auth/change-password', requireAuth, authLimiter, async (req, res, next) => {
+  try {
+    const currentPassword = String(req.body?.currentPassword || '');
+    const newPassword = String(req.body?.newPassword || '');
+    const confirmPassword = String(req.body?.confirmPassword || '');
+    if (!currentPassword || currentPassword.length > 128) return apiError(res, 400, 'Enter your current password.');
+    if (newPassword.length < 10 || newPassword.length > 128 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      return apiError(res, 400, 'New password must be 10–128 characters and include at least one letter and one number.');
+    }
+    if (newPassword !== confirmPassword) return apiError(res, 400, 'New password and confirmation do not match.');
+    if (currentPassword === newPassword) return apiError(res, 400, 'Choose a new password different from your current password.');
+
+    const users = db.collection('users');
+    const current = await users.findOne(
+      { _id: req.user._id, status: 'active', role: { $in: ['user', 'admin'] } },
+      { projection: { password_hash: 1 } }
+    );
+    if (!current) return apiError(res, 409, 'Your account is no longer active. Please sign in again.');
+    if (!(await bcrypt.compare(currentPassword, current.password_hash))) return apiError(res, 403, 'The current password is incorrect.');
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const result = await users.updateOne(
+      { _id: req.user._id, status: 'active', password_hash: current.password_hash },
+      { $set: { password_hash: passwordHash, password_changed_at: now(), updated_at: now() } }
+    );
+    if (result.modifiedCount !== 1) return apiError(res, 409, 'Your password changed in another request. Refresh and try again.');
+
+    res.set('Cache-Control', 'no-store, max-age=0');
+    return res.json({ ok: true, message: 'Your password has been changed successfully.' });
+  } catch (error) { next(error); }
+});
 app.put('/api/profile/contact', requireAuth, mutationLimiter, async (req, res, next) => {
   try {
     let telegramId;

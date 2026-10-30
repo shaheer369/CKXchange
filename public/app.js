@@ -73,6 +73,7 @@
     recharge: ['WALLET', 'Add USDT', 'Submit a deposit transaction for verification.'],
     history: ['ACTIVITY', 'Transaction history', 'Track deposit and payout status updates.'],
     profile: ['ACCOUNT', 'Profile & settings', 'Your CKXchange account details and settings.'],
+    password: ['ACCOUNT SECURITY', 'Change password', 'Update your password securely.'],
     notifications: ['YOUR ACCOUNT', 'Notification center', 'Review account alerts and manage browser delivery.'],
     admin: ['ADMINISTRATION', 'Admin panel', 'Review deposit claims, payout requests and account activity.']
   };
@@ -572,7 +573,8 @@
     const currentPage = document.querySelector('.page.active')?.id.replace(/^page-/, '');
     if (page === 'addbank' && (currentPage === 'send' || currentPage === 'banks')) addBankReturnPage = currentPage;
     document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id === `page-${page}`));
-    document.querySelectorAll('[data-page]').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+    const activeNavPage = page === 'password' ? 'profile' : page;
+    document.querySelectorAll('[data-page]').forEach(el => el.classList.toggle('active', el.dataset.page === activeNavPage));
     if (page === 'admin') {
       const route = isAdminPath() ? adminSubPageFromPath() : 'overview';
       setAdminSubPage(route, { historyMode: push ? 'replace' : 'none' });
@@ -738,17 +740,17 @@
     };
     const palette = statusPalette[status] || statusPalette.pending;
     const rows = [
-      ['TX','TRANSACTION ID',t.id || '—'],
-      ['DT','DATE & TIME',dateText(t.timestamp)],
-      ['AC','ACCOUNT HOLDER',t.holder || '—'],
-      ['BK','BANK',t.bank || '—'],
-      ['BR','BRANCH',t.branch || '—'],
-      ['A/C','ACCOUNT NUMBER',String(t.account || '—')],
-      ['IF','IFSC CODE',t.ifsc || '—'],
-      ['ST','STATUS',palette.label]
+      ['TRANSACTION ID',t.id || '—'],
+      ['DATE & TIME',dateText(t.timestamp)],
+      ['ACCOUNT HOLDER',t.holder || '—'],
+      ['BANK',t.bank || '—'],
+      ['BRANCH',t.branch || '—'],
+      ['ACCOUNT NUMBER',String(t.account || '—')],
+      ['IFSC CODE',t.ifsc || '—'],
+      ['STATUS',palette.label]
     ];
-    if (t.bankReference) rows.push(['REF','BANK REFERENCE',t.bankReference]);
-    if (t.rejectionReason) rows.push(['!','REASON',t.rejectionReason]);
+    if (t.bankReference) rows.push(['BANK REFERENCE',t.bankReference]);
+    if (t.rejectionReason) rows.push(['REASON',t.rejectionReason]);
 
     const width = 1254;
     const panelY = 565;
@@ -835,18 +837,9 @@
     ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 2; ctx.stroke();
     ctx.restore();
 
-    const iconStyles = [
-      ['#eee5ff','#6941d6'],['#e3f0ff','#1767cf'],['#eee6ff','#6847c9'],
-      ['#e4f0ff','#1767c9'],['#eee6ff','#6944d5'],['#e5f1ff','#1767c9'],
-      ['#eee6ff','#6944d5'],['#def7ed','#087b59'],['#eee6ff','#6944d5'],['#fff0db','#a86b16']
-    ];
     let y = panelY + 58;
-    rows.forEach(([icon,label,value], index) => {
-      const [tile, iconColor] = iconStyles[index] || iconStyles[0];
-      roundedRect(ctx, 132, y - 34, 52, 52, 15); ctx.fillStyle = tile; ctx.fill();
-      ctx.textAlign='center'; ctx.fillStyle=iconColor; ctx.font='700 19px Arial'; ctx.fillText(icon,158,y+1);
-
-      ctx.textAlign='left'; ctx.fillStyle='#716a9b'; ctx.font='600 21px Arial'; ctx.fillText(label, 211, y);
+    rows.forEach(([label,value], index) => {
+      ctx.textAlign='left'; ctx.fillStyle='#716a9b'; ctx.font='600 21px Arial'; ctx.fillText(label, 132, y);
       if (label === 'STATUS') {
         ctx.font = '600 21px Arial';
         const pillW = Math.max(144, ctx.measureText(String(value)).width + 54);
@@ -1103,6 +1096,35 @@
       toast(result.message || 'Support contact details saved.');
     } catch (error) {
       $('contactSettingsStatus').textContent = 'Could not save these details. Check the fields and try again.';
+      toast(error.message, 'error');
+    } finally { button.disabled = false; }
+  });
+
+  if ($('changePasswordForm')) $('changePasswordForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const currentPassword = $('currentAccountPassword').value;
+    const newPassword = $('newAccountPassword').value;
+    const confirmPassword = $('confirmAccountPassword').value;
+    const status = $('changePasswordStatus');
+    const button = $('changePasswordSubmit');
+    if (newPassword.length < 10 || newPassword.length > 128 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      status.textContent = 'New password must be 10–128 characters and include at least one letter and one number.';
+      toast(status.textContent, 'error'); return;
+    }
+    if (newPassword !== confirmPassword) {
+      status.textContent = 'New password and confirmation do not match.';
+      toast(status.textContent, 'error'); $('confirmAccountPassword').focus(); return;
+    }
+    button.disabled = true; status.textContent = 'Updating your password…';
+    try {
+      const result = await request('/api/auth/change-password', {
+        method: 'POST', body: { currentPassword, newPassword, confirmPassword }
+      });
+      $('changePasswordForm').reset();
+      status.textContent = result.message || 'Your password has been changed successfully.';
+      toast(status.textContent);
+    } catch (error) {
+      status.textContent = error.message;
       toast(error.message, 'error');
     } finally { button.disabled = false; }
   });

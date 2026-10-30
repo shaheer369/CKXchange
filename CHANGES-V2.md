@@ -1,3 +1,10 @@
+## v2.4.9 — Password changes and clean payout slip rows
+
+- Added an authenticated password-change page from Profile. Users must provide their current password, a matching confirmation, and a 10–128 character new password containing at least one letter and one number.
+- Password changes are protected by the existing CSRF/origin middleware, authenticated session, request rate limit, and bcrypt password hashing. The active session remains signed in.
+- Removed the decorative two-letter row markers from downloaded payout slips; detail labels and values remain aligned in the fixed pastel receipt design.
+- Bumped static asset and service-worker cache versions to v2.4.9.
+
 ## v2.4.8 — Dollar-denominated USDT displays and small-balance account deletion
 
 - Added a leading `$` to USDT wallet balances, reserved/deducted USDT, deposit amounts, payout estimates, audit values, and admin/user USDT balance displays.
