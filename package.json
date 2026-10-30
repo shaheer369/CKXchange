@@ -1,6 +1,6 @@
 {
   "name": "ckxchange-fullstack",
-  "version": "2.4.5",
+  "version": "2.4.6",
   "private": true,
   "description": "CKXchange prepared for Vercel Functions and MongoDB Atlas, with protected admin panel and deposit/payout workflows",
   "main": "server.js",

@@ -1,3 +1,10 @@
+## v2.4.6 — Light and dark appearance + fixed receipt design
+
+- Added a persistent Light/Dark appearance switch in Profile; Light mode is the default for new browsers.
+- Applied a lavender, pale-blue and soft-pink palette across customer and admin pages while preserving their existing layouts.
+- Restyled the payout slip with a fixed pastel receipt palette that does not change with the app theme.
+- Bumped the service-worker cache and static asset versions.
+
 # CKXchange v2.0.0 — Change notes
 
 ## Implemented in this source copy

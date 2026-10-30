@@ -2,6 +2,29 @@
   'use strict';
   const RATE_DEFAULT = 106;
   const $ = id => document.getElementById(id);
+  const THEME_STORAGE_KEY = 'ckxchange-theme';
+  function applyTheme(theme, persist = true) {
+    const selected = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = selected;
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) themeColor.setAttribute('content', selected === 'dark' ? '#090b13' : '#f6f2ff');
+    const toggle = $('themeModeToggle');
+    const label = $('themeModeToggleLabel');
+    const description = $('themeModeDescription');
+    const next = selected === 'light' ? 'dark' : 'light';
+    if (label) label.textContent = `Switch to ${next} mode`;
+    if (description) description.textContent = `${selected === 'light' ? 'Light' : 'Dark'} mode is enabled. You can switch anytime.`;
+    if (toggle) {
+      toggle.setAttribute('aria-label', `Switch to ${next} mode`);
+      toggle.setAttribute('aria-pressed', String(selected === 'dark'));
+      toggle.title = `Switch to ${next} mode`;
+    }
+    if (persist) {
+      try { localStorage.setItem(THEME_STORAGE_KEY, selected); }
+      catch (error) { console.warn('CKXchange could not save the appearance preference:', error?.message || error); }
+    }
+    return selected;
+  }
   const state = { user: null, balance: 0, reservedUsdt: 0, rate: RATE_DEFAULT, banks: [], transactions: [], supportUsername: '', notifications: [], unreadNotifications: 0, notificationPrefs: { inAppEnabled: true, pushEnabled: false, pushConfigured: false } };
   let csrfToken = '';
   let authMode = 'login';
@@ -620,31 +643,148 @@
   }
   function roundedRect(ctx,x,y,w,h,r) { const radius=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+radius,y); ctx.arcTo(x+w,y,x+w,y+h,radius); ctx.arcTo(x+w,y+h,x,y+h,radius); ctx.arcTo(x,y+h,x,y,radius); ctx.arcTo(x,y,x+w,y,radius); ctx.closePath(); }
   function createReceiptCanvas(t) {
-    const status=t.status||'pending';
-    const rows=[['TRANSACTION ID',t.id||'—'],['DATE & TIME',dateText(t.timestamp)],['ACCOUNT HOLDER',t.holder||'—'],['BANK',t.bank||'—'],['BRANCH',t.branch||'—'],['ACCOUNT NUMBER',String(t.account || '—')],['IFSC CODE',t.ifsc||'—'],['STATUS',statusText(status)]];
-    if(t.bankReference) rows.push(['BANK REFERENCE',t.bankReference]); if(t.rejectionReason) rows.push(['REASON',t.rejectionReason]);
-    const lastRowY=435+(rows.length-1)*57;
-    const canvasHeight=lastRowY+100;
-    const canvas=document.createElement('canvas'); canvas.width=1000; canvas.height=canvasHeight; const ctx=canvas.getContext('2d');
-    const accent=status==='success'?'#61e6aa':status==='pending'?'#f0c477':status==='processing'?'#72b7ff':'#ff7792';
-    const bg=ctx.createLinearGradient(0,0,1000,canvasHeight); bg.addColorStop(0,'#0d1020'); bg.addColorStop(1,'#101a2a'); ctx.fillStyle=bg; ctx.fillRect(0,0,1000,canvasHeight);
-    const glow=ctx.createRadialGradient(500,100,20,500,100,600); glow.addColorStop(0,`${accent}20`); glow.addColorStop(1,'#10132100'); ctx.fillStyle=glow; ctx.fillRect(0,0,1000,550);
-    ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.lineWidth=2; roundedRect(ctx,36,36,928,canvasHeight-72,34); ctx.stroke();
-    // Center the icon and all receipt headline content on the 1000px canvas.
-    ctx.textAlign='center';
-    ctx.fillStyle=accent; roundedRect(ctx,440,48,120,120,60); ctx.fill(); ctx.fillStyle='#101321'; ctx.font='700 64px Arial'; ctx.fillText(status==='success'?'✓':status==='pending'?'…':status==='processing'?'↻':'!',500,129);
-    ctx.fillStyle='#f5f6ff'; ctx.font='700 39px Arial'; ctx.fillText(`Payout ${statusText(status)}`,500,244);
-    ctx.fillStyle='#8e97b3'; ctx.font='500 20px Arial'; ctx.fillText('INR payout request receipt',500,282);
-    ctx.fillStyle='#fff'; ctx.font='700 58px Arial'; ctx.fillText(money(t.amount),500,367);
-    let y=435;
-    for(const [label,value] of rows) {
-      ctx.fillStyle='#8992ad'; ctx.font='600 17px Arial'; ctx.textAlign='left'; ctx.fillText(label,90,y);
-      ctx.fillStyle=label==='STATUS'?accent:'#f0f1fc'; ctx.font='600 18px Arial'; ctx.textAlign='right';
-      let textValue=String(value); const max=525; let valueFont=18;
-      while(ctx.measureText(textValue).width>max && valueFont>12) { valueFont-=1; ctx.font=`600 ${valueFont}px Arial`; }
-      if(label!=='ACCOUNT NUMBER') while(ctx.measureText(textValue).width>max && textValue.length>6) textValue=textValue.slice(0,-4)+'…';
-      ctx.fillText(textValue,910,y); ctx.strokeStyle='rgba(255,255,255,.075)'; ctx.beginPath(); ctx.moveTo(90,y+18); ctx.lineTo(910,y+18); ctx.stroke(); y+=57;
-    }
+    const status = t.status || 'pending';
+    const statusPalette = {
+      success: { strong:'#087b59', soft:'#d9f7eb', label:'Successful' },
+      pending: { strong:'#936116', soft:'#fff0cf', label:'Pending' },
+      processing: { strong:'#2368ad', soft:'#deefff', label:'Processing' },
+      rejected: { strong:'#b43c58', soft:'#ffe3e9', label:'Rejected' },
+      failed: { strong:'#b43c58', soft:'#ffe3e9', label:'Failed' }
+    };
+    const palette = statusPalette[status] || statusPalette.pending;
+    const rows = [
+      ['TX','TRANSACTION ID',t.id || '—'],
+      ['DT','DATE & TIME',dateText(t.timestamp)],
+      ['AC','ACCOUNT HOLDER',t.holder || '—'],
+      ['BK','BANK',t.bank || '—'],
+      ['BR','BRANCH',t.branch || '—'],
+      ['A/C','ACCOUNT NUMBER',String(t.account || '—')],
+      ['IF','IFSC CODE',t.ifsc || '—'],
+      ['ST','STATUS',palette.label]
+    ];
+    if (t.bankReference) rows.push(['REF','BANK REFERENCE',t.bankReference]);
+    if (t.rejectionReason) rows.push(['!','REASON',t.rejectionReason]);
+
+    const width = 1254;
+    const panelY = 565;
+    const rowHeight = 76;
+    const panelHeight = rows.length * rowHeight + 42;
+    const height = panelY + panelHeight + 75;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    const background = ctx.createLinearGradient(0, 0, width, height);
+    background.addColorStop(0, '#d8ccff');
+    background.addColorStop(.48, '#eaf4ff');
+    background.addColorStop(1, '#f4dafa');
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, width, height);
+
+    // Soft pastel light pools, matching the supplied fixed receipt reference.
+    const glowA = ctx.createRadialGradient(220, 160, 12, 220, 160, 560);
+    glowA.addColorStop(0, 'rgba(255,255,255,.82)');
+    glowA.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = glowA;
+    ctx.fillRect(0, 0, width, height);
+    const glowB = ctx.createRadialGradient(1070, 950, 20, 1070, 950, 540);
+    glowB.addColorStop(0, 'rgba(255,255,255,.48)');
+    glowB.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = glowB;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(104,83,165,.16)';
+    ctx.shadowBlur = 28;
+    ctx.strokeStyle = 'rgba(255,255,255,.88)';
+    ctx.lineWidth = 4;
+    roundedRect(ctx, 48, 48, width - 96, height - 96, 48);
+    ctx.stroke();
+    ctx.restore();
+
+    // A calm centered success/status mark and receipt heading.
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,.28)';
+    ctx.beginPath(); ctx.arc(width/2, 172, 104, 0, Math.PI*2); ctx.fill();
+    const markGradient = ctx.createLinearGradient(0, 80, 0, 270);
+    markGradient.addColorStop(0, status === 'success' ? '#a0f8d8' : palette.soft);
+    markGradient.addColorStop(1, status === 'success' ? '#55e5b5' : '#c9b8ff');
+    ctx.fillStyle = markGradient;
+    ctx.beginPath(); ctx.arc(width/2, 172, 78, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.76)'; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.arc(width/2, 172, 91, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = status === 'success' ? '#07563f' : palette.strong;
+    ctx.font = '700 94px Arial';
+    ctx.fillText(status === 'success' ? '✓' : status === 'pending' ? '…' : status === 'processing' ? '↻' : '!', width/2, 205);
+    // Small celebratory strokes are part of the receipt, not theme-dependent.
+    const confetti = ['#59a7f3','#51cdb1','#9d69ef','#58c6b4'];
+    const marks = [[510,135,-1],[744,130,1],[490,205,-1],[765,196,1]];
+    marks.forEach(([x,y,d],i)=>{ ctx.save(); ctx.translate(x,y); ctx.rotate(d*.55); ctx.strokeStyle=confetti[i]; ctx.lineWidth=9; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(-8,0); ctx.lineTo(8,0); ctx.stroke(); ctx.restore(); });
+
+    ctx.fillStyle = '#111027';
+    ctx.font = '700 53px Arial';
+    ctx.fillText(`Payout ${palette.label}`, width/2, 340);
+    ctx.fillStyle = '#77719e';
+    ctx.font = '500 27px Arial';
+    ctx.fillText('INR payout request receipt', width/2, 390);
+
+    // Amount in its own translucent pill.
+    ctx.save();
+    ctx.shadowColor = 'rgba(122,94,190,.10)'; ctx.shadowBlur = 18;
+    const amountGradient = ctx.createLinearGradient(350, 420, 900, 520);
+    amountGradient.addColorStop(0, 'rgba(255,255,255,.76)');
+    amountGradient.addColorStop(1, 'rgba(255,255,255,.56)');
+    ctx.fillStyle = amountGradient;
+    roundedRect(ctx, 344, 423, 566, 112, 40); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.86)'; ctx.lineWidth=3; ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#111027'; ctx.font = '700 66px Arial';
+    ctx.textAlign = 'center'; ctx.fillText(money(t.amount), width/2, 499);
+
+    // White glass transaction panel with pastel icon tiles and aligned values.
+    ctx.save();
+    ctx.shadowColor = 'rgba(111,89,164,.12)'; ctx.shadowBlur = 24;
+    ctx.fillStyle = 'rgba(255,255,255,.72)';
+    roundedRect(ctx, 98, panelY, width - 196, panelHeight, 34); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+
+    const iconStyles = [
+      ['#eee5ff','#6941d6'],['#e3f0ff','#1767cf'],['#eee6ff','#6847c9'],
+      ['#e4f0ff','#1767c9'],['#eee6ff','#6944d5'],['#e5f1ff','#1767c9'],
+      ['#eee6ff','#6944d5'],['#def7ed','#087b59'],['#eee6ff','#6944d5'],['#fff0db','#a86b16']
+    ];
+    let y = panelY + 58;
+    rows.forEach(([icon,label,value], index) => {
+      const [tile, iconColor] = iconStyles[index] || iconStyles[0];
+      roundedRect(ctx, 132, y - 34, 52, 52, 15); ctx.fillStyle = tile; ctx.fill();
+      ctx.textAlign='center'; ctx.fillStyle=iconColor; ctx.font='700 19px Arial'; ctx.fillText(icon,158,y+1);
+
+      ctx.textAlign='left'; ctx.fillStyle='#716a9b'; ctx.font='600 21px Arial'; ctx.fillText(label, 211, y);
+      if (label === 'STATUS') {
+        ctx.font = '600 21px Arial';
+        const pillW = Math.max(144, ctx.measureText(String(value)).width + 54);
+        const px = width - 132 - pillW;
+        roundedRect(ctx, px, y - 31, pillW, 46, 23);
+        ctx.fillStyle = palette.soft; ctx.fill();
+        ctx.fillStyle = palette.strong; ctx.beginPath(); ctx.arc(px+23,y-8,7,0,Math.PI*2); ctx.fill();
+        ctx.textAlign='center'; ctx.fillStyle=palette.strong; ctx.fillText(String(value), px + pillW/2 + 10, y+1);
+      } else {
+        let textValue = String(value);
+        let fontSize = 23;
+        ctx.textAlign='right'; ctx.fillStyle='#17132f';
+        ctx.font = `500 ${fontSize}px Arial`;
+        while (ctx.measureText(textValue).width > 510 && fontSize > 15) { fontSize -= 1; ctx.font = `500 ${fontSize}px Arial`; }
+        while (ctx.measureText(textValue).width > 510 && textValue.length > 9) { textValue = textValue.slice(0,-5) + '…'; }
+        ctx.fillText(textValue, width - 132, y);
+      }
+      if (index < rows.length - 1) {
+        ctx.strokeStyle='rgba(127,111,176,.18)'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.moveTo(132,y+32); ctx.lineTo(width-132,y+32); ctx.stroke();
+      }
+      y += rowHeight;
+    });
     return canvas;
   }
   async function downloadReceiptImage(t) {
@@ -655,7 +795,7 @@
     const status=t.status||'pending'; $('receiptTitle').textContent=`Payout ${statusText(status)}`;
     $('receiptModal').querySelector('.receipt-head p').textContent=status==='success'?'Your payout is recorded as successful.':status==='processing'?'Your payout request is being processed.':status==='pending'?'Your payout request is waiting for admin review.':`Your payout request was ${statusText(status).toLowerCase()}.`;
     $('receiptAmount').textContent=money(t.amount); const amountLabel=$('receiptModal').querySelector('.receipt-amount-label'); if(amountLabel) amountLabel.textContent=status==='success'?'AMOUNT SENT · INR':'REQUESTED AMOUNT · INR'; $('receiptId').textContent=t.id; $('receiptDate').textContent=dateText(t.timestamp); $('receiptHolder').textContent=t.holder||'—'; $('receiptBank').textContent=t.bank||'—'; $('receiptBranch').textContent=t.branch||'—'; $('receiptAccount').textContent=t.account||'—'; $('receiptIfsc').textContent=t.ifsc||'—';
-    $('receiptStatus').textContent=statusText(status); $('receiptStatus').style.color=status==='success'?'var(--green)':status==='pending'?'#f0c477':status==='processing'?'#72b7ff':'var(--red)';
+    $('receiptStatus').textContent=statusText(status); $('receiptStatus').style.color=status==='success'?'#087b59':status==='pending'?'#936116':status==='processing'?'#2368ad':'#b43c58';
     const icon=$('receiptModal').querySelector('.success-mark'); icon.style.background=status==='success'?'linear-gradient(145deg,#8af4bf,#42d69c)':status==='pending'?'linear-gradient(145deg,#ffe3a1,#dcae4a)':status==='processing'?'linear-gradient(145deg,#acd6ff,#5998df)':'linear-gradient(145deg,#ffb5c2,#e45a7e)'; icon.querySelector('svg path').setAttribute('d',status==='success'?'m5 12 4.5 4.5L19 7':status==='pending'?'M12 6v6l4 2':status==='processing'?'M20 11a8 8 0 1 0 2 5':'M6 6l12 12M18 6 6 18');
   }
   async function openReceipt(t) {
@@ -1060,6 +1200,12 @@
       else { history.replaceState({}, '', '/'); go('home',false); toast('Administrator access is restricted to administrator accounts.','error'); }
     } else go('home',false);
   });
+  const themeModeToggle = $('themeModeToggle');
+  if (themeModeToggle) themeModeToggle.addEventListener('click', () => {
+    applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  });
+  applyTheme(document.documentElement.dataset.theme || 'light', false);
+
   // Customer support username is public configuration; wallet and account data remain server-side.
   setAuthMode('login');
   updateDepositEstimate();

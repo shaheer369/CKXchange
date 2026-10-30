@@ -1,17 +1,18 @@
 <!DOCTYPE html>
 
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<meta content="#090b13" name="theme-color"/>
+<meta content="#f6f2ff" name="theme-color"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
-<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.5"/>
-<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.5"/>
+<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.6"/>
+<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.6"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="CKXchange"/>
 <title>CKXchange — USDT to INR</title>
+<script src="/theme-init.js?v=2.4.6"></script>
 <style>
     :root {
       color-scheme: dark;
@@ -455,12 +456,193 @@
     #receiptAccount { overflow-wrap:anywhere; word-break:break-all; }
     .notification-action { border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.035); color:#b9a6ff; padding:9px 12px; font-size:10px; font-weight:700; }
     @media (max-width: 560px) { .notification-bell { width:38px; height:38px; } .notification-controls { align-items:flex-start; } }
+
+
+    /* CKXchange light theme: same layouts, pastel lavender/blue/pink palette. */
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f5f2ff;
+      --surface: rgba(255,255,255,.88);
+      --surface-2: #f7f4ff;
+      --surface-3: #eee9fb;
+      --line: rgba(91,75,135,.13);
+      --line-strong: rgba(91,75,135,.22);
+      --text: #19162d;
+      --muted: #77718e;
+      --muted-2: #9992ad;
+      --violet: #8658e8;
+      --violet-2: #7046d7;
+      --cyan: #25aaa9;
+      --green: #13845f;
+      --red: #d94e6b;
+      --shadow: 0 22px 64px rgba(91,72,142,.15);
+    }
+    html[data-theme="light"] body {
+      background:
+        radial-gradient(ellipse at 12% 4%, rgba(197,180,255,.58), transparent 39%),
+        radial-gradient(ellipse at 98% 30%, rgba(245,205,239,.52), transparent 42%),
+        radial-gradient(ellipse at 14% 100%, rgba(197,226,255,.5), transparent 40%),
+        #f7f5ff;
+    }
+    html[data-theme="light"] .sidebar { background: rgba(255,255,255,.82); box-shadow: 0 14px 44px rgba(91,72,142,.09); }
+    html[data-theme="light"] .nav-button { color: #6f6987; }
+    html[data-theme="light"] .nav-button:hover { color: #27213d; background: rgba(124,91,193,.08); }
+    html[data-theme="light"] .nav-button.active { color: #fff; background: linear-gradient(100deg,#9874ef,#b58be9); box-shadow: inset 2px 0 #7049cf, 0 6px 18px rgba(128,89,211,.18); }
+    html[data-theme="light"] .nav-button.active svg { color: #fff; }
+    html[data-theme="light"] .sidebar-rate { background: linear-gradient(145deg,rgba(201,185,255,.28),rgba(193,232,246,.25)); }
+    html[data-theme="light"] .avatar { background: linear-gradient(145deg,#9b79ed,#66b9df); color: #fff; }
+    html[data-theme="light"] .eyebrow { color: #8374aa; }
+    html[data-theme="light"] .icon-button,
+    html[data-theme="light"] .notification-bell { color: #51476f; background: rgba(255,255,255,.68); }
+    html[data-theme="light"] .icon-button:hover,
+    html[data-theme="light"] .notification-bell:hover { background: #fff; }
+    html[data-theme="light"] .demo-chip { color: #765018; background: rgba(255,218,142,.28); border-color: rgba(191,139,49,.22); }
+    html[data-theme="light"] .balance-card {
+      border-color: rgba(255,255,255,.84);
+      background: linear-gradient(125deg,#d9cbff 0%,#e2eaff 53%,#dff4f5 100%);
+      box-shadow: 0 18px 50px rgba(120,101,185,.19);
+    }
+    html[data-theme="light"] .balance-card:before { border-color: rgba(112,83,173,.15); box-shadow: 0 0 0 22px rgba(255,255,255,.18),0 0 0 48px rgba(255,255,255,.13); }
+    html[data-theme="light"] .balance-card:after { background: rgba(110,210,217,.2); }
+    html[data-theme="light"] .wallet-label { color: #52496f; }
+    html[data-theme="light"] .wallet-icon { color: #6847bd; border-color: rgba(109,82,172,.18); background: rgba(255,255,255,.5); }
+    html[data-theme="light"] .live-badge { color: #117452; border-color: rgba(19,132,95,.23); background: rgba(255,255,255,.45); }
+    html[data-theme="light"] .balance-amount { color: #1d1933; }
+    html[data-theme="light"] .balance-amount .token { color: #615783; }
+    html[data-theme="light"] .balance-inr { color: #625b7b; }
+    html[data-theme="light"] .balance-inr strong { color: #211c38; }
+    html[data-theme="light"] .rate-note { color: #655d83; }
+    html[data-theme="light"] .quick-card,
+    html[data-theme="light"] .page-panel,
+    html[data-theme="light"] .activity-card,
+    html[data-theme="light"] .panel,
+    html[data-theme="light"] .stat-card { background: rgba(255,255,255,.88); box-shadow: 0 10px 32px rgba(91,72,142,.06); }
+    html[data-theme="light"] .action-tile { background: rgba(255,255,255,.75); }
+    html[data-theme="light"] .action-tile:hover { background: #fff; }
+    html[data-theme="light"] .action-icon { color: #7653d3; background: rgba(160,129,231,.16); }
+    html[data-theme="light"] .action-tile.recharge .action-icon { color: #168e94; background: rgba(69,194,191,.14); }
+    html[data-theme="light"] .text-button { color: #7652ce; }
+    html[data-theme="light"] .text-button:hover { color: #4f35a0; }
+    html[data-theme="light"] .bank-card { background: linear-gradient(135deg,rgba(255,255,255,.92),rgba(234,226,255,.52)); }
+    html[data-theme="light"] .saved-bank-row { background: rgba(255,255,255,.82); }
+    html[data-theme="light"] .bank-logo { color: #5d49a2; background: linear-gradient(145deg,#eee7ff,#dceeff); border-color: rgba(120,96,180,.14); }
+    html[data-theme="light"] .bank-number { color: #5d5871; }
+    html[data-theme="light"] .delete-bank-btn { color: #b83c5a; border-color: rgba(217,78,107,.24); background: rgba(255,220,228,.5); }
+    html[data-theme="light"] .inline-add { color: #7651c9; background: rgba(255,255,255,.55); border-color: rgba(130,98,196,.35); }
+    html[data-theme="light"] .inline-add:hover { background: #fff; }
+    html[data-theme="light"] .field label { color: #39334f; }
+    html[data-theme="light"] .field input,
+    html[data-theme="light"] .field select,
+    html[data-theme="light"] .admin-list-toolbar input { background: #fff; color: #211c38; border-color: rgba(105,88,150,.22); box-shadow: inset 0 1px 2px rgba(54,42,91,.035); }
+    html[data-theme="light"] .field input::placeholder,
+    html[data-theme="light"] .admin-list-toolbar input::placeholder { color: #a19bb1; }
+    html[data-theme="light"] .field input[readonly] { color: #625b79; background: #f0edf8; }
+    html[data-theme="light"] .field input:focus,
+    html[data-theme="light"] .field select:focus,
+    html[data-theme="light"] .admin-list-toolbar input:focus { border-color: rgba(134,88,232,.7); box-shadow: 0 0 0 3px rgba(134,88,232,.12); }
+    html[data-theme="light"] .lookup-status.loading { color: #7958ca; }
+    html[data-theme="light"] .helper-box { color: #526a78; background: rgba(108,203,201,.09); border-color: rgba(61,166,166,.18); }
+    html[data-theme="light"] .helper-box svg { color: #168e94; }
+    html[data-theme="light"] .secondary-btn { color: #51476c; background: rgba(255,255,255,.72); border-color: rgba(103,84,147,.22); }
+    html[data-theme="light"] .secondary-btn:hover { background: #fff; }
+    html[data-theme="light"] .danger-btn { color: #be3e5d; background: rgba(255,220,228,.6); border-color: rgba(217,78,107,.25); }
+    html[data-theme="light"] .send-max-btn { color: #6847b6; border-color: rgba(134,88,232,.3); background: rgba(170,142,235,.13); }
+    html[data-theme="light"] .send-inline-estimate { background: linear-gradient(110deg,rgba(194,177,255,.19),rgba(169,224,231,.16)); }
+    html[data-theme="light"] .send-inline-estimate strong { color: #6650a8; }
+    html[data-theme="light"] .estimate-card { background: linear-gradient(145deg,rgba(209,194,255,.22),rgba(186,226,239,.18)); }
+    html[data-theme="light"] .estimate-row strong { color: #28213f; }
+    html[data-theme="light"] .estimate-row.total strong { color: #6848bb; }
+    html[data-theme="light"] .empty-icon { color: #7654c9; background: rgba(159,130,230,.14); }
+    html[data-theme="light"] .filter-select { color: #39334f; background: #fff; border-color: var(--line-strong); }
+    html[data-theme="light"] .transaction-slip-link { color: #7550c6; }
+    html[data-theme="light"] .transaction-slip-link:hover { color: #4f35a0; }
+    html[data-theme="light"] .transaction-slip-link:focus-visible { outline-color: #8658e8; }
+    html[data-theme="light"] .settings-icon { color: #6956a4; background: rgba(161,139,220,.14); }
+    html[data-theme="light"] .settings-value { color: #6d50b7; }
+    html[data-theme="light"] .amount-option { color: #51476c; background: rgba(255,255,255,.78); }
+    html[data-theme="light"] .amount-option:hover,
+    html[data-theme="light"] .amount-option.selected { color: #5d3eb1; background: rgba(179,155,246,.2); }
+    html[data-theme="light"] .recharge-visual { background: radial-gradient(circle at 50% 22%,rgba(180,157,245,.28),transparent 55%),linear-gradient(145deg,#fff,#eff5ff); }
+    html[data-theme="light"] .coin-orbit { border-color: rgba(127,100,192,.3); }
+    html[data-theme="light"] .coin-orbit:before { border-color: rgba(37,170,169,.42); }
+    html[data-theme="light"] .toast { background: rgba(255,255,255,.97); color: #28223f; border-color: rgba(105,88,150,.2); }
+    html[data-theme="light"] .toast-icon { color: #13845f; }
+    html[data-theme="light"] .toast.error .toast-icon { color: #d94e6b; }
+    html[data-theme="light"] .payout-review-modal { background: #fff; border-color: rgba(113,92,165,.2); box-shadow: 0 25px 80px rgba(83,65,130,.22); }
+    html[data-theme="light"] .payout-review-head { border-bottom-color: rgba(105,88,150,.18); }
+    html[data-theme="light"] .payout-review-row { border-bottom-color: rgba(105,88,150,.13); }
+    html[data-theme="light"] .payout-review-amount { color: #6d4db7; }
+    html[data-theme="light"] .modal-close { color: #51476c; background: rgba(255,255,255,.8); }
+    html[data-theme="light"] .auth-overlay { background: radial-gradient(ellipse at 20% 0%,rgba(197,180,255,.52),transparent 40%),radial-gradient(ellipse at 100% 90%,rgba(245,205,239,.36),transparent 45%),#f7f5ff; }
+    html[data-theme="light"] .auth-card { background: rgba(255,255,255,.92); border-color: rgba(105,88,150,.2); box-shadow: 0 24px 70px rgba(91,72,142,.17); }
+    html[data-theme="light"] .auth-tabs { background: #f1edfb; border-color: rgba(105,88,150,.15); }
+    html[data-theme="light"] .auth-tab.active { color: #fff; background: linear-gradient(110deg,#9874ef,#8158df); }
+    html[data-theme="light"] .auth-alert { color: #8b5d17; }
+    html[data-theme="light"] .audit-payout-meta strong,
+    html[data-theme="light"] .audit-payout-field strong { color: #29233f; }
+    html[data-theme="light"] .audit-payout-reference code { color: #6d4db7; }
+    html[data-theme="light"] .audit-payout-fields { background: rgba(180,157,237,.08); border-color: rgba(105,88,150,.15); }
+    html[data-theme="light"] .audit-detail-hash,
+    html[data-theme="light"] .admin-hash { color: #5d5672; }
+    html[data-theme="light"] .nav-notification-count { color: #a83251; background: rgba(217,78,107,.13); }
+    html[data-theme="light"] .admin-address-box { background: #fff; }
+    html[data-theme="light"] .admin-address-box code { color: #443a61; }
+    html[data-theme="light"] .admin-subnav { background: rgba(255,255,255,.8); }
+    html[data-theme="light"] .admin-subnav a:hover { background: rgba(134,88,232,.09); }
+    html[data-theme="light"] .admin-subnav a.active { color: #fff; background: linear-gradient(110deg,#9874ef,#8158df); }
+    html[data-theme="light"] .admin-nav-badge { background: rgba(134,88,232,.12); color: #61459f; }
+    html[data-theme="light"] .admin-copy-btn { color: #6548aa; background: rgba(160,132,230,.12); }
+    html[data-theme="light"] .support-link { color: #176e70; background: rgba(85,190,187,.12); border-color: rgba(37,170,169,.24); }
+    html[data-theme="light"] .danger-zone { background: linear-gradient(145deg,rgba(255,220,228,.65),rgba(255,255,255,.92)); }
+    html[data-theme="light"] .danger-zone .section-title { color: #b83c5a; }
+    html[data-theme="light"] .offline-banner { color: #805d1c; background: rgba(255,228,175,.48); border-color: rgba(191,139,49,.22); }
+    html[data-theme="light"] .notification-count { border-color: #fff; }
+    html[data-theme="light"] .notification-item { background: rgba(255,255,255,.88); }
+    html[data-theme="light"] .notification-item-body { color: #625c77; }
+    html[data-theme="light"] .notification-item-body { color: #625c77; }
+    html[data-theme="light"] .notification-action { background: rgba(255,255,255,.78); color: #694bb1; }
+    html[data-theme="light"] .mobile-bottom { background: rgba(255,255,255,.93); border-top-color: rgba(91,75,135,.16); box-shadow: 0 -8px 26px rgba(91,72,142,.08); }
+    html[data-theme="light"] .mobile-nav-button { color: #817b97; }
+    html[data-theme="light"] .mobile-nav-button.active { color: #7954d2; }
+    html[data-theme="light"] .mobile-nav-button.active svg { filter: drop-shadow(0 0 4px rgba(139,92,246,.2)); }
+    html[data-theme="light"] .table-main { color: #211c38; }
+    html[data-theme="light"] .admin-table { color: #302a47; }
+    html[data-theme="light"] .admin-table th { color: #625a78; background: #f3effb; }
+    html[data-theme="light"] .admin-table td { color: #302a47; border-color: var(--line); }
+    html[data-theme="light"] .admin-table tbody tr:nth-child(even) { background: rgba(162,140,217,.055); }
+    html[data-theme="light"] .admin-user-muted { color: #77718e; }
+    html[data-theme="light"] .status-pending { color: #936313; background: rgba(240,196,119,.2); }
+    html[data-theme="light"] .status-processing { color: #285f9b; background: rgba(114,183,255,.18); }
+    html[data-theme="light"] .status-success { color: #137453; background: rgba(97,230,170,.18); }
+    html[data-theme="light"] .status-rejected,
+    html[data-theme="light"] .status-failed { color: #b53655; background: rgba(255,119,146,.16); }
+
+    /* Receipt presentation is intentionally fixed to the pastel reference palette in both app modes. */
+    .receipt-modal { background: linear-gradient(135deg,#f4efff 0%,#edf5ff 54%,#f8eafa 100%); color: #19152f; border: 1px solid rgba(255,255,255,.9); box-shadow: 0 28px 90px rgba(67,53,112,.28); }
+    .receipt-modal .receipt-head { border-bottom-color: rgba(117,99,170,.16); }
+    .receipt-modal .receipt-head h2 { color: #17132b; }
+    .receipt-modal .receipt-head p,
+    .receipt-modal .receipt-amount-label,
+    .receipt-modal .receipt-row span:first-child { color: #706991; }
+    .receipt-modal .receipt-amount { color: #161229; }
+    .receipt-modal .receipt-section-title { color: #76699d; }
+    .receipt-modal .receipt-row { border-bottom-color: rgba(117,99,170,.15); }
+    .receipt-modal .receipt-row strong { color: #201a3d; }
+    .receipt-modal .modal-close { color: #554a79; border-color: rgba(117,99,170,.2); background: rgba(255,255,255,.62); }
+    .receipt-modal .receipt-actions .secondary-btn { color: #534970; background: rgba(255,255,255,.72); }
+    .theme-toggle-button { min-height: 36px; padding-inline: 12px; white-space: nowrap; }
+    .theme-setting-row .settings-desc { max-width: 390px; }
+    @media (max-width: 480px) {
+      .theme-setting-row { flex-wrap: wrap; }
+      .theme-toggle-button { margin-left: 50px; }
+    }
+
 </style>
 </head>
 <body class="auth-pending auth-restoring">
 <div class="auth-overlay" id="authOverlay">
 <section aria-labelledby="authTitle" class="auth-card">
-<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.5" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
+<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.6" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
 <h1 class="auth-title" id="authTitle">Restoring your session…</h1><p class="auth-copy" id="authCopy">Checking your saved sign-in securely. Please wait a moment.</p>
 <button class="primary-btn full auth-retry-button" hidden id="authRetryButton" type="button">Retry connection</button>
 <div class="auth-tabs"><button class="auth-tab active" data-auth-mode="login" type="button">Sign in</button><button class="auth-tab" data-auth-mode="register" type="button">Create account</button></div>
@@ -477,7 +659,7 @@
 <div class="app-shell">
 <aside aria-label="Main navigation" class="sidebar">
 <div class="brand">
-<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.5" alt="" /></div>
+<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.6" alt="" /></div>
 <div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div><div class="brand-sub">Move value forward</div></div>
 </div>
 <div class="nav-label">WORKSPACE</div>
@@ -501,7 +683,7 @@
 <div class="offline-banner" id="offlineBanner" role="status" hidden>Connection lost. You can view this screen, but balances and financial actions require a live connection.</div>
 <header class="topbar">
 <div class="topbar-left"><div class="title-stack">
-<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.5" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
+<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.6" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
 <div class="eyebrow" id="pageEyebrow">YOUR FINANCIAL OVERVIEW</div><h1 class="page-title" id="pageTitle">Good afternoon 👋</h1><div class="page-subtitle" id="pageSubtitle">Your wallet, your value — all in one place.</div>
 </div></div>
 <div class="top-actions"><div class="demo-chip" title="Test environment: no automated blockchain or bank transfer is enabled."><span class="demo-dot"></span> TEST MODE</div><button aria-label="Open notifications" class="notification-bell" id="notificationBell" title="Notifications"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/></svg><span class="notification-count" id="notificationBellCount" hidden>0</span></button><button aria-label="Help" class="icon-button" id="helpButton" title="About CKXchange"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M9.7 9a2.4 2.4 0 1 1 4 1.8c-1.1.8-1.7 1.2-1.7 2.7M12 17h.01" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"></path></svg></button></div>
@@ -653,7 +835,8 @@
 <div class="page-panel" style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div class="avatar" style="width:60px;height:60px;border-radius:19px;font-size:19px">CX</div><div style="flex:1;min-width:170px"><div id="profileMemberName" style="font-size:18px;font-weight:760;letter-spacing:-.4px">CKXchange member</div><div id="profileMemberEmail" style="color:var(--muted);font-size:11px;margin-top:5px">Sign in to view account</div><div style="margin-top:10px"><span class="live-badge">● Authenticated account</span></div></div><div style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:8px 10px">MEMBER</div></div></div>
 <div class="stats-grid"><div class="stat-card"><div class="stat-top">Total INR sent <svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="profileTotal">₹0</div><div class="stat-foot">Successful payouts</div></div><div class="stat-card"><div class="stat-top">Saved banks <svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBanks">0</div><div class="stat-foot">Linked destinations</div></div><div class="stat-card"><div class="stat-top">Wallet balance <svg fill="none" viewbox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" stroke-width="1.6" width="17" x="3.5" y="6"></rect><path d="M3.5 10h17M16 15h1" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBalance">0.0000</div><div class="stat-foot">Available USDT</div></div></div>
 <section class="page-panel"><h2 class="section-title">App settings</h2><p class="section-caption">Application details and your account controls.</p><div class="settings-list">
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.5</div></div>
+<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.6</div></div>
+<div class="settings-row theme-setting-row"><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.2A8.6 8.6 0 0 1 8.8 3.5a8.8 8.8 0 1 0 11.7 11.7Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.5 3.5v5m-2.5-2.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div><div class="settings-content"><div class="settings-name">Appearance</div><div class="settings-desc" id="themeModeDescription">Light mode is enabled. You can switch to dark mode anytime.</div></div><button class="secondary-btn theme-toggle-button" id="themeModeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false"><span id="themeModeToggleLabel">Switch to dark mode</span></button></div>
 </div>
 
 <section class="page-panel" id="contactSettingsPanel" style="margin-top:16px"><h2 class="section-title">Support contact details</h2><p class="section-caption">Add a Telegram username or numeric ID and phone number so CKXchange administrators can contact you if there is an issue with a deposit or payout. These details are visible to authorized administrators only.</p>
@@ -684,9 +867,9 @@
 <div aria-labelledby="receiptTitle" aria-modal="true" class="modal-backdrop" id="receiptModal" role="dialog">
 <section class="receipt-modal">
 <div class="receipt-head"><button aria-label="Close receipt" class="modal-close" id="closeReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path></svg></button><div class="success-mark"><svg fill="none" viewbox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.3"></path></svg></div><h2 id="receiptTitle">Payout Pending</h2><p>Your payout request is waiting for review.</p><div class="receipt-amount" id="receiptAmount">₹0.00</div><div class="receipt-amount-label">AMOUNT SENT · INR</div></div>
-<div class="receipt-body"><div class="receipt-section-title">Transaction details</div><div class="receipt-row"><span>Transaction ID</span><strong id="receiptId">—</strong></div><div class="receipt-row"><span>Date &amp; time</span><strong id="receiptDate">—</strong></div><div class="receipt-row"><span>Account holder</span><strong id="receiptHolder">—</strong></div><div class="receipt-row"><span>Bank name</span><strong id="receiptBank">—</strong></div><div class="receipt-row"><span>Branch</span><strong id="receiptBranch">—</strong></div><div class="receipt-row"><span>Account number</span><strong id="receiptAccount">—</strong></div><div class="receipt-row"><span>IFSC code</span><strong id="receiptIfsc">—</strong></div><div class="receipt-row"><span>Status</span><strong id="receiptStatus" style="color:var(--green)">Pending</strong></div></div>
+<div class="receipt-body"><div class="receipt-section-title">Transaction details</div><div class="receipt-row"><span>Transaction ID</span><strong id="receiptId">—</strong></div><div class="receipt-row"><span>Date &amp; time</span><strong id="receiptDate">—</strong></div><div class="receipt-row"><span>Account holder</span><strong id="receiptHolder">—</strong></div><div class="receipt-row"><span>Bank name</span><strong id="receiptBank">—</strong></div><div class="receipt-row"><span>Branch</span><strong id="receiptBranch">—</strong></div><div class="receipt-row"><span>Account number</span><strong id="receiptAccount">—</strong></div><div class="receipt-row"><span>IFSC code</span><strong id="receiptIfsc">—</strong></div><div class="receipt-row"><span>Status</span><strong id="receiptStatus" style="color:#087b59">Pending</strong></div></div>
 <div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button></div>
 </section>
 </div>
-<script defer="True" src="/app.js?v=2.4.5"></script></body>
+<script defer="True" src="/app.js?v=2.4.6"></script></body>
 </html>
