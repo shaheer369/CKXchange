@@ -175,6 +175,13 @@ async function waitForStart(proc, origin) {
 
   const deposit = await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: 'a'.repeat(64) } });
   assert.equal(deposit.response.status, 201, `deposit creation failed: ${JSON.stringify(deposit.data)}`);
+  const initialDepositAudit = await api(origin, `/api/admin/audit?q=${encodeURIComponent(deposit.data.transaction.id)}`, { cookie: admin.cookie });
+  assert.equal(initialDepositAudit.response.status, 200, 'admin should be able to search audit entries by deposit transaction ID');
+  const depositRequestedAudit = initialDepositAudit.data.entries.find(entry => entry.action === 'deposit_requested');
+  assert.ok(depositRequestedAudit, 'customer deposit request should create an audit event');
+  assert.equal(depositRequestedAudit.actorRole, 'user', 'deposit request audit event should identify the customer as actor');
+  assert.equal(depositRequestedAudit.actorName, 'TEST CUSTOMER', 'deposit audit should identify who requested it');
+  assert.equal(depositRequestedAudit.details.requestedUsdt, 10, 'deposit audit should include the requested USDT amount');
   assert.equal(deposit.data.transaction.status, 'pending');
   assert.equal(deposit.data.transaction.depositAddress, trc20Address);
   assert.equal(deposit.data.transaction.amount, 1100, 'deposit valuation must use admin rate');
@@ -262,7 +269,7 @@ async function waitForStart(proc, origin) {
   assert.equal(payoutRequestedAudit.details.accountHolder, 'TEST CUSTOMER', 'audit details should include the destination account holder');
   assert.equal(payoutRequestedAudit.details.bankName, 'Smoke Bank', 'audit details should include the destination bank');
   assert.equal(payoutRequestedAudit.details.branchName, 'Smoke Branch', 'audit details should include the destination branch');
-  assert.equal(payoutRequestedAudit.details.accountNumber, '•••• 3456', 'audit details should mask the destination account number');
+  assert.equal(payoutRequestedAudit.details.accountNumber, expectedFullAccount, 'authorized admin audit response should retrieve the destination account number securely from the linked payout record');
   assert.equal(payoutRequestedAudit.details.ifscCode, 'TEST0123456', 'audit details should include the destination IFSC');
   assert.equal(payoutRequestedAudit.details.payoutStatus, 'success', 'audit details should reflect the latest transaction status');
   assert.equal(payoutRequestedAudit.details.bankReference, 'SMOKE-BANK-REF-123', 'audit details should include the confirmed bank reference');
@@ -275,6 +282,28 @@ async function waitForStart(proc, origin) {
   state = await api(origin, '/api/state', { cookie: customer.cookie });
   assert.ok(Math.abs(state.data.user.availableUsdt - 0.90909) < 0.000001);
   assert.equal(state.data.user.reservedUsdt, 0);
+  // Admin may credit a manually verified on-chain amount different from the customer's declaration.
+  const adjustedDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: 'e'.repeat(64) } });
+  assert.equal(adjustedDeposit.response.status, 201, `adjustment-test deposit submission failed: ${JSON.stringify(adjustedDeposit.data)}`);
+  const missingAdjustmentReason = await api(origin, `/api/admin/deposits/${adjustedDeposit.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { creditedUsdt: 12.5, adjustmentReason: 'ok' } });
+  assert.equal(missingAdjustmentReason.response.status, 400, 'deposit credit amount changes must require a meaningful adjustment reason');
+  const adjustedApproval = await api(origin, `/api/admin/deposits/${adjustedDeposit.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { creditedUsdt: 12.5, adjustmentReason: 'Verified blockchain amount was 12.5 USDT' } });
+  assert.equal(adjustedApproval.response.status, 200, `adjusted deposit approval failed: ${JSON.stringify(adjustedApproval.data)}`);
+  assert.equal(adjustedApproval.data.transaction.requestedUsdt, 10, 'deposit record must retain original requested amount');
+  assert.equal(adjustedApproval.data.transaction.creditedUsdt, 12.5, 'deposit record must expose final credited amount');
+  assert.equal(adjustedApproval.data.transaction.usdt, 12.5, 'deposit history amount should reflect actual credit after approval');
+  const adjustedAudit = await api(origin, `/api/admin/audit?q=${encodeURIComponent(adjustedDeposit.data.transaction.id)}`, { cookie: admin.cookie });
+  const adjustedApprovalAudit = adjustedAudit.data.entries.find(entry => entry.action === 'deposit_approved_manual_verification');
+  assert.ok(adjustedApprovalAudit, 'adjusted deposit approval should create an audit event');
+  assert.equal(adjustedApprovalAudit.depositOwnerName, 'TEST CUSTOMER', 'deposit approval audit should identify the customer');
+  assert.equal(adjustedApprovalAudit.details.requestedUsdt, 10, 'deposit approval audit should preserve requested amount');
+  assert.equal(adjustedApprovalAudit.details.creditedUsdt, 12.5, 'deposit approval audit should show credited amount');
+  assert.equal(adjustedApprovalAudit.details.adjustmentReason, 'Verified blockchain amount was 12.5 USDT', 'deposit adjustment reason should be audited');
+  const adjustedCustomerState = await api(origin, '/api/state', { cookie: customer.cookie });
+  assert.ok(Math.abs(adjustedCustomerState.data.user.availableUsdt - 13.40909) < 0.000001, 'wallet must receive the adjusted verified credit exactly once');
+  const adjustedNotice = (await api(origin, '/api/notifications', { cookie: customer.cookie })).data.notifications.find(row => row.kind === 'deposit_approved' && row.body.includes('12.5 USDT') && row.body.includes('₹1,375.00'));
+  assert.ok(adjustedNotice, 'customer approval notification must use the verified credited amount');
+
   // The administrator can also use their own customer-facing bank/deposit/payout endpoints.
   const adminDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: 'd'.repeat(64) } });
   assert.equal(adminDeposit.response.status, 201, `active admin deposit submission failed: ${JSON.stringify(adminDeposit.data)}`);

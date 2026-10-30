@@ -6,13 +6,13 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#f6f2ff" name="theme-color"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
-<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.6"/>
-<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.6"/>
+<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.7"/>
+<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.7"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="CKXchange"/>
 <title>CKXchange — USDT to INR</title>
-<script src="/theme-init.js?v=2.4.6"></script>
+<script src="/theme-init.js?v=2.4.7"></script>
 <style>
     :root {
       color-scheme: dark;
@@ -349,7 +349,7 @@
     }
     @media (max-width: 380px) { .main { padding-inline: 12px; } .balance-amount { font-size: 34px; } .balance-card { padding: 20px 17px; } .quick-actions { gap: 8px; } .topbar { gap: 8px; } .demo-chip { letter-spacing: -.1px; } .stats-grid { gap: 8px; } .stat-card { padding: 12px; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
-  
+
     [hidden] { display: none !important; }
     body.auth-pending .app-shell, body.auth-pending .mobile-bottom, body.auth-pending #toastRegion, body.auth-pending #receiptModal { visibility: hidden; }
     body.auth-restoring .auth-tabs, body.auth-restoring #authForm { display: none; }
@@ -432,7 +432,7 @@
     .copy-inline { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
     .copy-inline .admin-hash { flex:1 1 120px; }
     @media (max-width:760px) { .admin-subnav { gap:4px; } .admin-subnav a { padding:9px 10px; } .admin-pagination { align-items:flex-start; } }
-  
+
     .offline-banner { margin: 0 0 18px; border: 1px solid rgba(241,199,121,.24); background: rgba(241,199,121,.07); color: #f0cf88; border-radius: 13px; padding: 11px 14px; font-size: 11px; line-height: 1.5; }
     .notification-bell { position: relative; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; color: #c8cde0; background: rgba(255,255,255,.035); border: 1px solid var(--line); }
     .notification-bell:hover { border-color: var(--line-strong); background: rgba(255,255,255,.07); }
@@ -642,7 +642,7 @@
 <body class="auth-pending auth-restoring">
 <div class="auth-overlay" id="authOverlay">
 <section aria-labelledby="authTitle" class="auth-card">
-<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.6" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
+<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.7" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
 <h1 class="auth-title" id="authTitle">Restoring your session…</h1><p class="auth-copy" id="authCopy">Checking your saved sign-in securely. Please wait a moment.</p>
 <button class="primary-btn full auth-retry-button" hidden id="authRetryButton" type="button">Retry connection</button>
 <div class="auth-tabs"><button class="auth-tab active" data-auth-mode="login" type="button">Sign in</button><button class="auth-tab" data-auth-mode="register" type="button">Create account</button></div>
@@ -659,7 +659,7 @@
 <div class="app-shell">
 <aside aria-label="Main navigation" class="sidebar">
 <div class="brand">
-<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.6" alt="" /></div>
+<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.7" alt="" /></div>
 <div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div><div class="brand-sub">Move value forward</div></div>
 </div>
 <div class="nav-label">WORKSPACE</div>
@@ -683,7 +683,7 @@
 <div class="offline-banner" id="offlineBanner" role="status" hidden>Connection lost. You can view this screen, but balances and financial actions require a live connection.</div>
 <header class="topbar">
 <div class="topbar-left"><div class="title-stack">
-<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.6" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
+<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.7" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
 <div class="eyebrow" id="pageEyebrow">YOUR FINANCIAL OVERVIEW</div><h1 class="page-title" id="pageTitle">Good afternoon 👋</h1><div class="page-subtitle" id="pageSubtitle">Your wallet, your value — all in one place.</div>
 </div></div>
 <div class="top-actions"><div class="demo-chip" title="Test environment: no automated blockchain or bank transfer is enabled."><span class="demo-dot"></span> TEST MODE</div><button aria-label="Open notifications" class="notification-bell" id="notificationBell" title="Notifications"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/></svg><span class="notification-count" id="notificationBellCount" hidden>0</span></button><button aria-label="Help" class="icon-button" id="helpButton" title="About CKXchange"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M9.7 9a2.4 2.4 0 1 1 4 1.8c-1.1.8-1.7 1.2-1.7 2.7M12 17h.01" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"></path></svg></button></div>
@@ -835,7 +835,8 @@
 <div class="page-panel" style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div class="avatar" style="width:60px;height:60px;border-radius:19px;font-size:19px">CX</div><div style="flex:1;min-width:170px"><div id="profileMemberName" style="font-size:18px;font-weight:760;letter-spacing:-.4px">CKXchange member</div><div id="profileMemberEmail" style="color:var(--muted);font-size:11px;margin-top:5px">Sign in to view account</div><div style="margin-top:10px"><span class="live-badge">● Authenticated account</span></div></div><div style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:8px 10px">MEMBER</div></div></div>
 <div class="stats-grid"><div class="stat-card"><div class="stat-top">Total INR sent <svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="profileTotal">₹0</div><div class="stat-foot">Successful payouts</div></div><div class="stat-card"><div class="stat-top">Saved banks <svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBanks">0</div><div class="stat-foot">Linked destinations</div></div><div class="stat-card"><div class="stat-top">Wallet balance <svg fill="none" viewbox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" stroke-width="1.6" width="17" x="3.5" y="6"></rect><path d="M3.5 10h17M16 15h1" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBalance">0.0000</div><div class="stat-foot">Available USDT</div></div></div>
 <section class="page-panel"><h2 class="section-title">App settings</h2><p class="section-caption">Application details and your account controls.</p><div class="settings-list">
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.6</div></div>
+<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.7</div></div>
+<div class="settings-row" id="pwaInstallRow" hidden><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="settings-content"><div class="settings-name">Install CKXchange</div><div class="settings-desc">Add CKXchange to your device for quick access.</div></div><button class="secondary-btn" id="pwaInstallButton" type="button">Install app</button></div>
 <div class="settings-row theme-setting-row"><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.2A8.6 8.6 0 0 1 8.8 3.5a8.8 8.8 0 1 0 11.7 11.7Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.5 3.5v5m-2.5-2.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div><div class="settings-content"><div class="settings-name">Appearance</div><div class="settings-desc" id="themeModeDescription">Light mode is enabled. You can switch to dark mode anytime.</div></div><button class="secondary-btn theme-toggle-button" id="themeModeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false"><span id="themeModeToggleLabel">Switch to dark mode</span></button></div>
 </div>
 
@@ -871,5 +872,5 @@
 <div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button></div>
 </section>
 </div>
-<script defer="True" src="/app.js?v=2.4.6"></script></body>
+<script defer="True" src="/app.js?v=2.4.7"></script></body>
 </html>

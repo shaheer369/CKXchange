@@ -1,3 +1,12 @@
+## v2.4.7 — Deposit credit correction, richer audit trail and PWA install control
+
+- Admins can enter the independently verified USDT amount before deposit approval. The amount defaults to the customer's request; adjustments require a reason and are saved with the audit event.
+- Deposit approval credits the verified amount atomically, stores requested and credited amounts separately, preserves the request-time INR/USDT rate, and notifies the customer of the credited amount.
+- Added a customer deposit-request audit event; deposit audit rows show requester/admin identity, requested amount, credited amount when approved, TRC20 hash, and adjustment reason.
+- Payout audit rows now identify the original customer requester alongside the approving/reviewing administrator.
+- Added an Install CKXchange control in Profile. It opens the browser install prompt when available, offers browser-specific installation guidance otherwise, and hides itself when running as an installed PWA.
+- Bumped static asset and service-worker cache versions.
+
 ## v2.4.6 — Light and dark appearance + fixed receipt design
 
 - Added a persistent Light/Dark appearance switch in Profile; Light mode is the default for new browsers.

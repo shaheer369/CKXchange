@@ -218,7 +218,14 @@ function transactionDto(row, admin = false) {
   if (admin && row.bank_cipher) {
     try { account = decryptAccount(row.bank_cipher); } catch (_) { account = accountMasked(row.bank_last4); }
   }
-  return { id: row._id || row.id, type: row.type, status: row.status, amount: fromPaise(row.amount_paise), usdt: fromUsdtMicro(row.usdt_micro),
+  const requestedUsdtMicro = row.type === 'deposit' ? (row.requested_usdt_micro ?? row.usdt_micro) : row.usdt_micro;
+  const creditedUsdtMicro = row.type === 'deposit'
+    ? (row.credited_usdt_micro ?? (row.status === 'success' ? row.usdt_micro : null))
+    : null;
+  const displayUsdtMicro = row.type === 'deposit' && creditedUsdtMicro !== null ? creditedUsdtMicro : row.usdt_micro;
+  return { id: row._id || row.id, type: row.type, status: row.status, amount: fromPaise(row.amount_paise), usdt: fromUsdtMicro(displayUsdtMicro),
+    requestedUsdt: row.type === 'deposit' ? fromUsdtMicro(requestedUsdtMicro) : undefined,
+    creditedUsdt: creditedUsdtMicro === null ? null : fromUsdtMicro(creditedUsdtMicro),
     bankId: row.bank_id, holder: row.bank_holder, bank: row.bank_name, branch: row.branch_name, account, last4: row.bank_last4, ifsc: row.ifsc,
     network: row.network, txHash: row.tx_hash, depositAddress: row.deposit_address || '', bankReference: row.bank_reference, rejectionReason: row.rejection_reason,
     timestamp: row.created_at, updatedAt: row.updated_at, userId: row.user_id };
@@ -826,9 +833,11 @@ app.post('/api/deposits', requireAuth, mutationLimiter, async (req, res, next) =
     if (prior) return apiError(res, 409, 'This transaction hash has already been submitted for this network.');
     const usdtMicro = toUsdtMicro(amount);
     if (!Number.isSafeInteger(usdtMicro) || usdtMicro <= 0) return apiError(res, 400, 'Deposit amount is outside the supported range.');
-    const txId = id('DEP'); const created = now(); const amountPaise = toPaise(fromUsdtMicro(usdtMicro) * await currentRate());
+    const txId = id('DEP'); const created = now(); const depositRate = await currentRate();
+    const amountPaise = toPaise(fromUsdtMicro(usdtMicro) * depositRate);
     if (!Number.isSafeInteger(amountPaise) || amountPaise < 0) return apiError(res, 400, 'Deposit amount is outside the supported currency range.');
     const transaction = { _id: txId, user_id: req.user._id, type: 'deposit', status: 'pending', amount_paise: amountPaise, usdt_micro: usdtMicro,
+      requested_usdt_micro: usdtMicro, inr_per_usdt: depositRate,
       network, tx_hash: txHash, deposit_address: depositAddress.address, created_at: created, updated_at: created };
     try {
       const notificationIds = await runTransaction(async mongoSession => {
@@ -837,6 +846,9 @@ app.post('/api/deposits', requireAuth, mutationLimiter, async (req, res, next) =
         const active = await db.collection('users').findOne({ _id: req.user._id, role: { $in: ['user', 'admin'] }, status: 'active' }, { session: mongoSession, projection: { _id: 1 } });
         if (!active) throw new Error('ACCOUNT_NOT_ACTIVE');
         await db.collection('transactions').insertOne(transaction, { session: mongoSession });
+        await auditUser(req.user._id, 'deposit_requested', txId, {
+          network, txHash, requestedUsdt: fromUsdtMicro(usdtMicro), estimatedInr: fromPaise(amountPaise)
+        }, mongoSession);
         return queueDepositAdminNotifications(mongoSession, transaction);
       });
       await deliverPushOutbox(notificationIds).catch(error => console.error('[push-outbox]', error?.message || error));
@@ -971,28 +983,36 @@ app.get('/api/admin/audit', async (req, res, next) => {
       const regex = new RegExp(escapedRegExp(q), 'i');
       const userIds = await matchingUserIds(q);
       const payoutSearch = [{ _id: regex }, { bank_holder: regex }, { bank_name: regex }, { branch_name: regex }, { bank_last4: regex }, { ifsc: regex }, { user_id: regex }];
-      if (userIds.length) payoutSearch.push({ user_id: { $in: userIds } });
-      const matchingPayouts = await db.collection('transactions').find(
-        { type: 'payout', $or: payoutSearch }, { projection: { _id: 1 } }
-      ).limit(500).toArray();
-      const matchingPayoutIds = matchingPayouts.map(row => row._id);
+      const depositSearch = [{ _id: regex }, { tx_hash: regex }, { user_id: regex }, { network: regex }];
+      if (userIds.length) {
+        payoutSearch.push({ user_id: { $in: userIds } });
+        depositSearch.push({ user_id: { $in: userIds } });
+      }
+      const [matchingPayouts, matchingDeposits] = await Promise.all([
+        db.collection('transactions').find({ type: 'payout', $or: payoutSearch }, { projection: { _id: 1 } }).limit(500).toArray(),
+        db.collection('transactions').find({ type: 'deposit', $or: depositSearch }, { projection: { _id: 1 } }).limit(500).toArray()
+      ]);
+      const matchingTargetIds = [...matchingPayouts, ...matchingDeposits].map(row => row._id);
       filter = { $or: [
         { action: regex }, { target_id: regex }, { admin_id: regex }, { actor_id: regex },
         ...(userIds.length ? [{ admin_id: { $in: userIds } }, { actor_id: { $in: userIds } }] : []),
-        ...(matchingPayoutIds.length ? [{ target_id: { $in: matchingPayoutIds } }] : [])
+        ...(matchingTargetIds.length ? [{ target_id: { $in: matchingTargetIds } }] : [])
       ] };
     }
     const total = await db.collection('audit_log').countDocuments(filter);
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
     const rows = await db.collection('audit_log').find(filter).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
     const targetIds = [...new Set(rows.map(row => row.target_id).filter(Boolean))];
-    const payoutRows = targetIds.length ? await db.collection('transactions').find(
-      { _id: { $in: targetIds }, type: 'payout' }
+    const linkedRows = targetIds.length ? await db.collection('transactions').find(
+      { _id: { $in: targetIds }, type: { $in: ['payout', 'deposit'] } }
     ).toArray() : [];
+    const payoutRows = linkedRows.filter(txn => txn.type === 'payout');
+    const depositRows = linkedRows.filter(txn => txn.type === 'deposit');
     const payoutMap = new Map(payoutRows.map(txn => [txn._id, txn]));
+    const depositMap = new Map(depositRows.map(txn => [txn._id, txn]));
     const identities = [...new Set([
       ...rows.map(row => row.actor_id || row.admin_id).filter(Boolean),
-      ...payoutRows.map(txn => txn.user_id).filter(Boolean)
+      ...linkedRows.map(txn => txn.user_id).filter(Boolean)
     ])];
     const people = identities.length ? await db.collection('users').find(
       { _id: { $in: identities } }, { projection: { name: 1, email: 1, role: 1 } }
@@ -1005,24 +1025,45 @@ app.get('/api/admin/audit', async (req, res, next) => {
       const actor = peopleMap.get(actorId);
       const actorRole = row.actor_role || (row.admin_id ? 'admin' : 'user');
       const payout = payoutMap.get(row.target_id);
+      const deposit = depositMap.get(row.target_id);
       const payoutOwner = payout ? peopleMap.get(payout.user_id) : null;
+      const depositOwner = deposit ? peopleMap.get(deposit.user_id) : null;
       let details = row.details && typeof row.details === 'object' && !Array.isArray(row.details) ? { ...row.details } : {};
       if (payout) {
-        // The audit database stores no decrypted account number. This protected, no-store admin
-        // response joins the full number from the encrypted payout record for the requested UI view.
+        // Full destination account data is joined only in this protected, no-store admin response.
         details = {
           ...details,
           payoutAmountInr: fromPaise(payout.amount_paise),
+          requestedBy: payoutOwner?.name || (payout.user_deleted ? 'Deleted account' : 'Unknown user'),
+          requesterEmail: payoutOwner?.email || '',
+          usdtReserved: fromUsdtMicro(payout.usdt_micro),
           accountHolder: payout.bank_holder || (payout.user_deleted ? 'Bank details removed' : ''),
+          bankName: payout.bank_name || '', branchName: payout.branch_name || '', ifscCode: payout.ifsc || '',
+          payoutStatus: payout.status, bankReference: payout.bank_reference || '',
           accountNumber: payout.bank_cipher ? transactionDto(payout, true).account : (payout.bank_last4 ? accountMasked(payout.bank_last4) : (payout.user_deleted ? 'Bank details removed' : '—'))
         };
       }
+      if (deposit) {
+        const requestedMicro = deposit.requested_usdt_micro ?? deposit.usdt_micro;
+        const creditedMicro = deposit.credited_usdt_micro ?? (deposit.status === 'success' ? deposit.usdt_micro : null);
+        details = {
+          ...details,
+          network: deposit.network || 'TRC20',
+          txHash: deposit.tx_hash || details.txHash || '',
+          requestedUsdt: fromUsdtMicro(requestedMicro),
+          ...(creditedMicro === null ? {} : { creditedUsdt: fromUsdtMicro(creditedMicro) })
+        };
+      }
       return {
-        id: row._id, action: row.action, targetId: row.target_id, payoutLinked: Boolean(payout), details, createdAt: row.created_at,
+        id: row._id, action: row.action, targetId: row.target_id, payoutLinked: Boolean(payout), depositLinked: Boolean(deposit), details, createdAt: row.created_at,
         actorRole, actorName: actor?.name || (actorRole === 'user' ? 'Deleted account' : 'Unknown admin'),
         actorEmail: actor?.email || '',
         adminName: peopleMap.get(row.admin_id)?.name || (row.actor_role === 'user' ? 'Deleted user' : 'Unknown admin'),
-        adminEmail: peopleMap.get(row.admin_id)?.email || ''
+        adminEmail: peopleMap.get(row.admin_id)?.email || '',
+        payoutOwnerName: payoutOwner?.name || (payout?.user_deleted ? 'Deleted account' : 'Unknown user'),
+        payoutOwnerEmail: payoutOwner?.email || '',
+        depositOwnerName: depositOwner?.name || (deposit?.user_deleted ? 'Deleted account' : 'Unknown user'),
+        depositOwnerEmail: depositOwner?.email || ''
       };
     }), pagination: paginationDto(page, pageSize, total) });
   } catch (error) { next(error); }
@@ -1030,19 +1071,45 @@ app.get('/api/admin/audit', async (req, res, next) => {
 
 app.post('/api/admin/deposits/:id/approve', mutationLimiter, async (req, res, next) => {
   try {
+    const rawCreditAmount = req.body?.creditedUsdt;
+    const requestedCredit = rawCreditAmount === undefined || rawCreditAmount === null || rawCreditAmount === '' ? null : Number(rawCreditAmount);
+    if (requestedCredit !== null && (!Number.isFinite(requestedCredit) || requestedCredit <= 0 || requestedCredit > 10_000_000)) {
+      return apiError(res, 400, 'Enter a verified credit amount greater than 0 and no more than 10,000,000 USDT.');
+    }
+    const adjustmentReason = String(req.body?.adjustmentReason || '').trim().slice(0, 500);
     const result = await runTransaction(async mongoSession => {
       const transactions = db.collection('transactions');
       const txn = await transactions.findOne({ _id: req.params.id, type: 'deposit' }, { session: mongoSession });
       if (!txn) throw new Error('NOT_FOUND');
       if (txn.status !== 'pending') throw new Error('NOT_PENDING');
+      const requestedMicro = txn.requested_usdt_micro ?? txn.usdt_micro;
+      const creditedMicro = requestedCredit === null ? requestedMicro : toUsdtMicro(requestedCredit);
+      if (!Number.isSafeInteger(creditedMicro) || creditedMicro <= 0 || creditedMicro > 10_000_000_000_000) throw new Error('INVALID_CREDIT_AMOUNT');
+      const adjusted = creditedMicro !== requestedMicro;
+      if (adjusted && adjustmentReason.length < 3) throw new Error('ADJUSTMENT_REASON_REQUIRED');
+      // Preserve the rate that was shown when the customer submitted the request. Older
+      // pending records without a stored rate are reconstructed from their original estimate.
+      const impliedRate = requestedMicro > 0 ? (fromPaise(txn.amount_paise) / fromUsdtMicro(requestedMicro)) : await currentRate();
+      const depositRate = Number(txn.inr_per_usdt) > 0 ? Number(txn.inr_per_usdt) : impliedRate;
+      const creditedAmountPaise = toPaise(fromUsdtMicro(creditedMicro) * depositRate);
+      if (!Number.isSafeInteger(creditedAmountPaise) || creditedAmountPaise < 0) throw new Error('INVALID_CREDIT_AMOUNT');
       const updatedAt = now();
-      const changed = await transactions.updateOne({ _id: txn._id, type: 'deposit', status: 'pending' }, { $set: { status: 'success', updated_at: updatedAt } }, { session: mongoSession });
+      const changed = await transactions.updateOne({ _id: txn._id, type: 'deposit', status: 'pending' }, { $set: {
+        status: 'success', updated_at: updatedAt, requested_usdt_micro: requestedMicro,
+        credited_usdt_micro: creditedMicro, usdt_micro: creditedMicro, amount_paise: creditedAmountPaise,
+        inr_per_usdt: depositRate, credit_adjustment_reason: adjusted ? adjustmentReason : ''
+      } }, { session: mongoSession });
       if (changed.modifiedCount !== 1) throw new Error('NOT_PENDING');
-      const credit = await db.collection('users').updateOne({ _id: txn.user_id, status: 'active' }, { $inc: { available_usdt_micro: txn.usdt_micro } }, { session: mongoSession });
+      const credit = await db.collection('users').updateOne({ _id: txn.user_id, status: 'active' }, { $inc: { available_usdt_micro: creditedMicro } }, { session: mongoSession });
       if (credit.matchedCount !== 1) throw new Error('USER_NOT_FOUND');
-      await db.collection('ledger').insertOne({ _id: `${txn._id}:deposit_credit`, user_id: txn.user_id, transaction_id: txn._id, entry_type: 'deposit_credit', available_delta_micro: txn.usdt_micro, reserved_delta_micro: 0, created_at: updatedAt }, { session: mongoSession });
-      await audit(req.user._id, 'deposit_approved_manual_verification', txn._id, { network: txn.network, txHash: txn.tx_hash, amountUsdt: fromUsdtMicro(txn.usdt_micro) }, mongoSession);
-      const transaction = { ...txn, status: 'success', updated_at: updatedAt };
+      await db.collection('ledger').insertOne({ _id: `${txn._id}:deposit_credit`, user_id: txn.user_id, transaction_id: txn._id, entry_type: 'deposit_credit', available_delta_micro: creditedMicro, reserved_delta_micro: 0, created_at: updatedAt }, { session: mongoSession });
+      await audit(req.user._id, 'deposit_approved_manual_verification', txn._id, {
+        network: txn.network, txHash: txn.tx_hash, requestedUsdt: fromUsdtMicro(requestedMicro),
+        creditedUsdt: fromUsdtMicro(creditedMicro), ...(adjusted ? { adjustmentReason } : {})
+      }, mongoSession);
+      const transaction = { ...txn, status: 'success', updated_at: updatedAt, requested_usdt_micro: requestedMicro,
+        credited_usdt_micro: creditedMicro, usdt_micro: creditedMicro, amount_paise: creditedAmountPaise,
+        inr_per_usdt: depositRate, credit_adjustment_reason: adjusted ? adjustmentReason : '' };
       const notificationIds = await queueDepositApprovedNotification(mongoSession, transaction);
       return { transaction, notificationIds };
     });
@@ -1052,9 +1119,12 @@ app.post('/api/admin/deposits/:id/approve', mutationLimiter, async (req, res, ne
     if (error.message === 'NOT_FOUND') return apiError(res, 404, 'Deposit request not found.');
     if (error.message === 'NOT_PENDING') return apiError(res, 409, 'Deposit has already been reviewed.');
     if (error.message === 'USER_NOT_FOUND') return apiError(res, 409, 'The deposit owner is no longer active; no credit was applied.');
+    if (error.message === 'INVALID_CREDIT_AMOUNT') return apiError(res, 400, 'Enter a valid verified credit amount.');
+    if (error.message === 'ADJUSTMENT_REASON_REQUIRED') return apiError(res, 400, 'Enter a reason when the verified credit differs from the requested amount.');
     next(error);
   }
 });
+
 app.post('/api/admin/deposits/:id/reject', mutationLimiter, async (req, res, next) => {
   try {
     const reason = String(req.body?.reason || '').trim().slice(0, 500);

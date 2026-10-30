@@ -3,6 +3,7 @@
   const RATE_DEFAULT = 106;
   const $ = id => document.getElementById(id);
   const THEME_STORAGE_KEY = 'ckxchange-theme';
+  const PWA_INSTALLED_STORAGE_KEY = 'ckxchange-pwa-installed';
   function applyTheme(theme, persist = true) {
     const selected = theme === 'dark' ? 'dark' : 'light';
     document.documentElement.dataset.theme = selected;
@@ -47,6 +48,8 @@
   };
   let pollHandle = null;
   let pwaRegistration = null;
+  let deferredInstallPrompt = null;
+  let pwaInstalled = false;
   let notificationLoadPending = false;
   const ADMIN_SUBPAGES = ['overview', 'deposits', 'payouts', 'users', 'audit', 'settings'];
   const ADMIN_META = {
@@ -102,7 +105,7 @@
     accountHolder: 'Account holder', bankName: 'Destination bank', branchName: 'Branch',
     accountNumber: 'Destination account', accountLast4: 'Destination account', ifscCode: 'IFSC code',
     payoutStatus: 'Current transaction status', bankReference: 'Bank/provider reference',
-    txHash: 'TRC20 transaction hash', network: 'Deposit network', reason: 'Reason',
+    txHash: 'TRC20 transaction hash', network: 'Deposit network', requestedUsdt: 'USDT requested', creditedUsdt: 'USDT credited', estimatedInr: 'Estimated INR value', adjustmentReason: 'Credit adjustment reason', reason: 'Reason',
     previousRate: 'Previous rate (INR/USDT)', newRate: 'New rate (INR/USDT)',
     trc20Configured: 'TRC20 address configured', financialRecordsPreserved: 'Financial records preserved',
     directProfileAndBankDataRemoved: 'Profile/bank data removed', previousConfigured: 'Support was configured',
@@ -115,6 +118,7 @@
       payout_marked_success_after_reference: 'Payout marked Successful',
       payout_rejected_and_reserve_released: 'Payout rejected; reserved USDT released',
       payout_failed_and_reserve_released: 'Payout marked Failed; reserved USDT released',
+      deposit_requested: 'Customer requested a USDT deposit',
       deposit_approved_manual_verification: 'USDT deposit approved',
       deposit_rejected: 'USDT deposit rejected',
       user_account_deleted: 'Customer account deleted',
@@ -126,7 +130,7 @@
   function auditDetailText(key, value) {
     if (value === null || value === undefined || value === '') return '—';
     if (['payoutAmountInr', 'amountInr'].includes(key)) return money(value);
-    if (['usdtReserved', 'amountUsdt'].includes(key)) return `${fmtNumber(value, 6)} USDT`;
+    if (['usdtReserved', 'amountUsdt', 'requestedUsdt', 'creditedUsdt'].includes(key)) return `${fmtNumber(value, 6)} USDT`;
     if (key === 'payoutStatus') return statusText(value);
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
     if (typeof value === 'object') return JSON.stringify(value);
@@ -161,6 +165,7 @@
       return `<div class="settings-row audit-row audit-payout-row"><div class="settings-icon" aria-hidden="true">↗</div><div class="settings-content">
         <div class="settings-name">${safe(auditActionLabel(entry.action))}</div>
         <div class="audit-payout-meta"><span>${actorLabel}:</span> <strong>${safe(actorName)}</strong>${actorEmail ? ` <span>·</span> <span>${safe(actorEmail)}</span>` : ''}</div>
+        ${isAdmin && entry.payoutOwnerName ? `<div class="audit-payout-meta"><span>Requested by:</span> <strong>${safe(entry.payoutOwnerName)}</strong>${entry.payoutOwnerEmail ? ` <span>·</span> <span>${safe(entry.payoutOwnerEmail)}</span>` : ''}</div>` : ''}
         <div class="audit-payout-meta">${safe(dateText(entry.createdAt))}</div>
         <div class="audit-payout-reference"><span>Transaction</span><code title="${safe(targetId)}">${safe(targetId)}</code></div>
         <div class="audit-payout-fields">
@@ -169,6 +174,30 @@
           <div class="audit-payout-field"><span>Amount</span><strong>${safe(money(amount))}</strong></div>
         </div>
         <button type="button" class="transaction-slip-link audit-view-slip" data-view-admin-transaction="${safe(targetId)}" aria-label="View payout slip ${safe(targetId)}">View slip ↗</button>
+      </div></div>`;
+    }
+    const isDeposit = Boolean(entry.depositLinked) && /^DEP-/i.test(targetId);
+    if (isDeposit) {
+      const isAdmin = entry.actorRole === 'admin';
+      const actorLabel = isAdmin ? 'Reviewed by' : 'Requested by';
+      const actorName = isAdmin ? (entry.adminName || entry.actorName || 'Unknown admin') : (entry.actorName || 'Deleted account');
+      const actorEmail = isAdmin ? (entry.adminEmail || entry.actorEmail || '') : (entry.actorEmail || '');
+      const requested = details.requestedUsdt ?? details.amountUsdt;
+      const credited = details.creditedUsdt;
+      const txHash = String(details.txHash || '');
+      return `<div class="settings-row audit-row audit-payout-row"><div class="settings-icon" aria-hidden="true">₮</div><div class="settings-content">
+        <div class="settings-name">${safe(auditActionLabel(entry.action))}</div>
+        <div class="audit-payout-meta"><span>${actorLabel}:</span> <strong>${safe(actorName)}</strong>${actorEmail ? ` <span>·</span> <span>${safe(actorEmail)}</span>` : ''}</div>
+        ${isAdmin ? `<div class="audit-payout-meta"><span>Customer:</span> <strong>${safe(entry.depositOwnerName || 'Unknown user')}</strong>${entry.depositOwnerEmail ? ` <span>·</span> <span>${safe(entry.depositOwnerEmail)}</span>` : ''}</div>` : ''}
+        ${isAdmin && entry.payoutOwnerName ? `<div class="audit-payout-meta"><span>Requested by:</span> <strong>${safe(entry.payoutOwnerName)}</strong>${entry.payoutOwnerEmail ? ` <span>·</span> <span>${safe(entry.payoutOwnerEmail)}</span>` : ''}</div>` : ''}
+        <div class="audit-payout-meta">${safe(dateText(entry.createdAt))}</div>
+        <div class="audit-payout-reference"><span>Transaction</span><code title="${safe(targetId)}">${safe(targetId)}</code></div>
+        <div class="audit-payout-fields">
+          <div class="audit-payout-field"><span>Requested</span><strong>${requested == null ? '—' : `${safe(fmtNumber(requested, 6))} USDT`}</strong></div>
+          ${credited == null ? '' : `<div class="audit-payout-field"><span>Credited</span><strong>${safe(fmtNumber(credited, 6))} USDT</strong></div>`}
+        </div>
+        ${txHash ? `<div class="audit-payout-reference"><span>TRC20 hash</span><code title="${safe(txHash)}">${safe(shortHash(txHash))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(txHash)}" aria-label="Copy deposit transaction hash">Copy hash</button></div>` : ''}
+        ${details.adjustmentReason ? `<div class="settings-desc">Adjustment: ${safe(details.adjustmentReason)}</div>` : ''}
       </div></div>`;
     }
     const actorLabel = entry.actorRole === 'user' ? 'User' : 'Admin';
@@ -279,8 +308,61 @@
     if (banner) banner.hidden = navigator.onLine;
     if (!navigator.onLine && state.user) toast('You are offline. Financial actions need a live connection.', 'error');
   }
+  function isPwaRunningInstalled() {
+    const standalone = Boolean(window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true || document.referrer.startsWith('android-app://'));
+    if (standalone) return true;
+    try { return localStorage.getItem(PWA_INSTALLED_STORAGE_KEY) === '1'; }
+    catch (_) { return false; }
+  }
+  function rememberPwaInstalled() {
+    pwaInstalled = true;
+    try { localStorage.setItem(PWA_INSTALLED_STORAGE_KEY, '1'); } catch (_) {}
+  }
+  function renderPwaInstallButton() {
+    const row = $('pwaInstallRow');
+    const button = $('pwaInstallButton');
+    if (!row || !button) return;
+    pwaInstalled = pwaInstalled || isPwaRunningInstalled();
+    row.hidden = pwaInstalled;
+    button.textContent = deferredInstallPrompt ? 'Install app' : 'How to install';
+  }
+  async function installPwaFromProfile() {
+    if (pwaInstalled || isPwaRunningInstalled()) { pwaInstalled = true; renderPwaInstallButton(); return; }
+    if (!deferredInstallPrompt) {
+      const isAppleMobile = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      toast(isAppleMobile ? 'To install: open the Share menu in Safari and choose Add to Home Screen.' : 'To install: open your browser menu and choose Install app or Add to Home Screen.');
+      return;
+    }
+    const promptEvent = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    renderPwaInstallButton();
+    try {
+      await promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice?.outcome === 'accepted') { rememberPwaInstalled(); toast('Installation started.'); }
+      else toast('Installation was cancelled. You can install CKXchange later from the browser menu.');
+    } catch (error) {
+      console.warn('CKXchange install prompt failed:', error?.message || error);
+      toast('Could not open the install prompt. Use your browser menu to install CKXchange.', 'error');
+    }
+    renderPwaInstallButton();
+  }
   async function initializePwa() {
     updateOfflineState();
+    pwaInstalled = isPwaRunningInstalled();
+    renderPwaInstallButton();
+    window.addEventListener('beforeinstallprompt', event => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      renderPwaInstallButton();
+    });
+    window.addEventListener('appinstalled', () => {
+      rememberPwaInstalled();
+      deferredInstallPrompt = null;
+      renderPwaInstallButton();
+      toast('CKXchange has been installed.');
+    });
+    $('pwaInstallButton')?.addEventListener('click', installPwaFromProfile);
     window.addEventListener('online', updateOfflineState);
     window.addEventListener('offline', updateOfflineState);
     if (!('serviceWorker' in navigator)) return;
@@ -877,7 +959,7 @@
         const list = adminLists[kind];
         const data = await request(`/api/admin/transactions?type=${kind === 'deposits' ? 'deposit' : 'payout'}&page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
         if (kind === 'deposits') {
-          $('adminDepositsRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${safe(t.network || 'TRC20')}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="copy-inline"><code class="admin-hash" title="${safe(t.txHash)}">${safe(shortHash(t.txHash))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(t.txHash)}" aria-label="Copy transaction hash for ${safe(t.id)}">Copy hash</button></div></td><td><div class="table-main">${fmtNumber(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
+          $('adminDepositsRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${safe(t.network || 'TRC20')}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="copy-inline"><code class="admin-hash" title="${safe(t.txHash)}">${safe(shortHash(t.txHash))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(t.txHash)}" aria-label="Copy transaction hash for ${safe(t.id)}">Copy hash</button></div></td><td><div class="table-main">${fmtNumber(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}" data-requested-usdt="${safe(t.requestedUsdt ?? t.usdt)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
           $('adminDepositsEmpty').hidden = (data.transactions || []).length !== 0;
         } else {
           $('adminPayoutRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)} · ${safe(t.holder||'')}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="admin-user-muted">${safe(t.bank||'')} · ${safe(t.branch||'')}</div><div class="copy-inline"><div class="admin-user-muted">A/C ${safe(t.account||masked(t.last4))} · ${safe(t.ifsc||'')}</div>${t.account ? `<button class="admin-copy-btn" type="button" data-copy-value="${safe(t.account)}" aria-label="Copy payout account number for ${safe(t.id)}">Copy account no.</button>` : ''}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${money(t.amount)}</div><div class="table-sub">${fmtNumber(t.usdt,6)} USDT reserved</div></td><td>${statusBadge(t.status)}${t.bankReference?`<div class="table-sub">Ref: ${safe(t.bankReference)}</div>`:''}</td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions">${t.status==='pending'?`<button class="primary-btn" data-admin-action="payout-approve" data-id="${safe(t.id)}">Approve</button>`:''}${t.status==='processing'?`<button class="primary-btn" data-admin-action="payout-complete" data-id="${safe(t.id)}">Mark successful</button><button class="secondary-btn" data-admin-action="payout-fail" data-id="${safe(t.id)}">Mark failed</button>`:''}<button class="danger-btn" data-admin-action="payout-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
@@ -918,8 +1000,25 @@
     button.textContent = 'Working…';
     try {
       if(action==='deposit-approve') {
-        if(!confirm('Confirm you independently verified this network transaction, token contract, receiving address, amount, and required confirmations. Approving will credit the USDT balance.')) return;
-        await request(`/api/admin/deposits/${encodeURIComponent(id)}/approve`,{method:'POST',body:{}}); toast('Deposit verified and USDT credited.');
+        const requestedUsdt = Number(button.dataset.requestedUsdt);
+        const enteredCredit = prompt(`Customer requested ${fmtNumber(requestedUsdt, 6)} USDT. Enter the actual USDT amount independently verified on-chain:`, fmtNumber(requestedUsdt, 6));
+        if (enteredCredit === null) return;
+        const creditedUsdt = Number(String(enteredCredit).trim());
+        if (!Number.isFinite(creditedUsdt) || creditedUsdt <= 0 || creditedUsdt > 10_000_000 || Math.round(creditedUsdt * 1_000_000) <= 0) {
+          toast('Enter a valid verified amount greater than 0 and no more than 10,000,000 USDT.', 'error'); return;
+        }
+        const changedAmount = Math.round(creditedUsdt * 1_000_000) !== Math.round(requestedUsdt * 1_000_000);
+        let adjustmentReason = '';
+        if (changedAmount) {
+          const reason = prompt('The verified amount differs from the customer request. Enter the reason for this adjustment (at least 3 characters):');
+          if (reason === null) return;
+          adjustmentReason = reason.trim();
+          if (adjustmentReason.length < 3) { toast('An adjustment reason of at least 3 characters is required.', 'error'); return; }
+        }
+        const confirmText = `Confirm independent verification of the TRC20 transaction, token, receiving address and confirmations.\n\nRequested: ${fmtNumber(requestedUsdt, 6)} USDT\nTo credit: ${fmtNumber(creditedUsdt, 6)} USDT${changedAmount ? `\nAdjustment: ${adjustmentReason}` : ''}\n\nThis will credit the verified amount exactly once.`;
+        if(!confirm(confirmText)) return;
+        await request(`/api/admin/deposits/${encodeURIComponent(id)}/approve`,{method:'POST',body:{creditedUsdt, adjustmentReason}});
+        toast(`${fmtNumber(creditedUsdt, 6)} USDT verified and credited.`);
       } else if(action==='deposit-reject') {
         const reason=prompt('Why is this deposit being rejected?'); if(!reason) return;
         await request(`/api/admin/deposits/${encodeURIComponent(id)}/reject`,{method:'POST',body:{reason}}); toast('Deposit rejected; no balance was credited.');
