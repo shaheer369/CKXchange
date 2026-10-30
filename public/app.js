@@ -77,6 +77,7 @@
     admin: ['ADMINISTRATION', 'Admin panel', 'Review deposit claims, payout requests and account activity.']
   };
   const fmtNumber = (value, digits = 4) => Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const fmtUsdt = (value, digits = 4) => `$${fmtNumber(value, digits)}`;
   const money = value => '₹' + Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const safe = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
   const statusText = status => ({ pending:'Pending', processing:'Processing', success:'Successful', rejected:'Rejected', failed:'Failed' }[status] || 'Unknown');
@@ -104,6 +105,7 @@
     usdtReserved: 'USDT reserved', amountUsdt: 'USDT amount',
     accountHolder: 'Account holder', bankName: 'Destination bank', branchName: 'Branch',
     accountNumber: 'Destination account', accountLast4: 'Destination account', ifscCode: 'IFSC code',
+    remainingDustUsdt: 'Remaining USDT balance waived', remainingDustInrApprox: 'Approximate INR value waived', dustBalanceWaived: 'Sub-₹1 balance waived on deletion',
     payoutStatus: 'Current transaction status', bankReference: 'Bank/provider reference',
     txHash: 'TRC20 transaction hash', network: 'Deposit network', requestedUsdt: 'USDT requested', creditedUsdt: 'USDT credited', estimatedInr: 'Estimated INR value', adjustmentReason: 'Credit adjustment reason', reason: 'Reason',
     previousRate: 'Previous rate (INR/USDT)', newRate: 'New rate (INR/USDT)',
@@ -130,7 +132,8 @@
   function auditDetailText(key, value) {
     if (value === null || value === undefined || value === '') return '—';
     if (['payoutAmountInr', 'amountInr'].includes(key)) return money(value);
-    if (['usdtReserved', 'amountUsdt', 'requestedUsdt', 'creditedUsdt'].includes(key)) return `${fmtNumber(value, 6)} USDT`;
+    if (['usdtReserved', 'amountUsdt', 'requestedUsdt', 'creditedUsdt', 'remainingDustUsdt'].includes(key)) return `${fmtUsdt(value, 6)} USDT`;
+    if (key === 'remainingDustInrApprox') return money(value);
     if (key === 'payoutStatus') return statusText(value);
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
     if (typeof value === 'object') return JSON.stringify(value);
@@ -193,8 +196,8 @@
         <div class="audit-payout-meta">${safe(dateText(entry.createdAt))}</div>
         <div class="audit-payout-reference"><span>Transaction</span><code title="${safe(targetId)}">${safe(targetId)}</code></div>
         <div class="audit-payout-fields">
-          <div class="audit-payout-field"><span>Requested</span><strong>${requested == null ? '—' : `${safe(fmtNumber(requested, 6))} USDT`}</strong></div>
-          ${credited == null ? '' : `<div class="audit-payout-field"><span>Credited</span><strong>${safe(fmtNumber(credited, 6))} USDT</strong></div>`}
+          <div class="audit-payout-field"><span>Requested</span><strong>${requested == null ? '—' : `${safe(fmtUsdt(requested, 6))} USDT`}</strong></div>
+          ${credited == null ? '' : `<div class="audit-payout-field"><span>Credited</span><strong>${safe(fmtUsdt(credited, 6))} USDT</strong></div>`}
         </div>
         ${txHash ? `<div class="audit-payout-reference"><span>TRC20 hash</span><code title="${safe(txHash)}">${safe(shortHash(txHash))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(txHash)}" aria-label="Copy deposit transaction hash">Copy hash</button></div>` : ''}
         ${details.adjustmentReason ? `<div class="settings-desc">Adjustment: ${safe(details.adjustmentReason)}</div>` : ''}
@@ -615,18 +618,18 @@
     const total = payouts.reduce((sum, t) => sum + Number(t.amount || 0), 0);
     const usdt = payouts.reduce((sum, t) => sum + Number(t.usdt || 0), 0);
     $('historyCount').textContent = payouts.length.toLocaleString('en-IN');
-    $('historyTotal').textContent = money(total).replace(/\.00$/, ''); $('historyUsdt').textContent = fmtNumber(usdt, 4);
+    $('historyTotal').textContent = money(total).replace(/\.00$/, ''); $('historyUsdt').textContent = fmtUsdt(usdt, 4);
     $('profileTotal').textContent = money(total).replace(/\.00$/, ''); $('profileBanks').textContent = state.banks.length.toLocaleString('en-IN');
-    $('profileBalance').textContent = fmtNumber(state.balance, 4); $('homeUsdt').textContent = fmtNumber(state.balance, 4);
-    $('homeInr').textContent = money(state.balance * state.rate); $('rechargeCurrent').textContent = fmtNumber(state.balance,4);
+    $('profileBalance').textContent = fmtUsdt(state.balance, 4); $('homeUsdt').textContent = fmtUsdt(state.balance, 4);
+    $('homeInr').textContent = money(state.balance * state.rate); $('rechargeCurrent').textContent = fmtUsdt(state.balance,4);
     const activePage = document.querySelector('.page.active')?.id.replace('page-','') || 'home';
     $('pageSubtitle').textContent = (activePage === 'admin' ? ADMIN_META[activeAdminSubPage] : PAGE_META[activePage])?.[2] || '';
     const recent = [...state.transactions].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0,4);
     $('recentActivity').innerHTML = recent.length ? recent.map(t => {
       const isPayout = t.type === 'payout'; const title = isPayout ? 'INR payout' : 'USDT deposit request';
       const desc = isPayout ? `${safe(t.bank || 'Saved bank')} · ${safe(dateText(t.timestamp))}` : `${safe(t.network || 'USDT')} · ${safe(dateText(t.timestamp))}`;
-      const amount = isPayout ? `−${money(t.amount)}` : `+${fmtNumber(t.usdt, 4)} USDT requested`;
-      const subAmount = isPayout ? `Reserved ${fmtNumber(t.usdt,4)} USDT` : `Claimed value ${money(t.amount)}`;
+      const amount = isPayout ? `−${money(t.amount)}` : `+${fmtUsdt(t.usdt, 4)} USDT requested`;
+      const subAmount = isPayout ? `Reserved ${fmtUsdt(t.usdt,4)} USDT` : `Claimed value ${money(t.amount)}`;
       return `<div class="activity-item"><div class="activity-icon" style="color:${t.status==='success'?'var(--green)':t.status==='pending'?'#f0c477':'#a4baff'}">${isPayout ? '↗' : '₮'}</div><div class="activity-content"><div class="activity-title">${title}</div><div class="activity-sub">${desc}</div>${statusBadge(t.status)}</div><div class="activity-amount"><div class="activity-inr">${amount}</div><div class="activity-usdt">${subAmount}</div></div></div>`;
     }).join('') : `<div class="empty-state"><div class="empty-title">Nothing here just yet</div><div class="empty-desc">Submit a USDT deposit request or an INR payout request to create activity.</div></div>`;
     renderHistoryTable();
@@ -672,7 +675,7 @@
   }
   function updateDepositEstimate() {
     const amount = Math.max(0, Number($('depositAmount')?.value) || 0);
-    if ($('depositEstUsdt')) $('depositEstUsdt').textContent = `${fmtNumber(amount, 6)} USDT`;
+    if ($('depositEstUsdt')) $('depositEstUsdt').textContent = `${fmtUsdt(amount, 6)} USDT`;
     if ($('depositEstInr')) $('depositEstInr').textContent = money(amount * state.rate);
     const validAmount = amount >= 10;
     const hint = $('depositMinimumHint');
@@ -950,7 +953,7 @@
       $('adminDepositsCount').textContent = Number(overview.pendingDeposits || 0).toLocaleString('en-IN');
       $('adminPayoutsCount').textContent = Number(overview.pendingPayouts || 0).toLocaleString('en-IN');
       $('adminSuccessfulPayoutInr').textContent = money(overview.successfulPayoutInr || 0);
-      $('adminTotalAvailableUsdt').textContent = `${fmtNumber(overview.totalAvailableUsdt || 0,4)} USDT`;
+      $('adminTotalAvailableUsdt').textContent = `${fmtUsdt(overview.totalAvailableUsdt || 0,4)} USDT`;
       $('adminDepositsBadge').textContent = Number(overview.pendingDeposits || 0) > 99 ? '99+' : String(overview.pendingDeposits || 0);
       $('adminPayoutsBadge').textContent = Number(overview.pendingPayouts || 0) > 99 ? '99+' : String(overview.pendingPayouts || 0);
 
@@ -959,17 +962,17 @@
         const list = adminLists[kind];
         const data = await request(`/api/admin/transactions?type=${kind === 'deposits' ? 'deposit' : 'payout'}&page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
         if (kind === 'deposits') {
-          $('adminDepositsRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${safe(t.network || 'TRC20')}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="copy-inline"><code class="admin-hash" title="${safe(t.txHash)}">${safe(shortHash(t.txHash))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(t.txHash)}" aria-label="Copy transaction hash for ${safe(t.id)}">Copy hash</button></div></td><td><div class="table-main">${fmtNumber(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}" data-requested-usdt="${safe(t.requestedUsdt ?? t.usdt)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
+          $('adminDepositsRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${safe(t.network || 'TRC20')}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="copy-inline"><code class="admin-hash" title="${safe(t.txHash)}">${safe(shortHash(t.txHash))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(t.txHash)}" aria-label="Copy transaction hash for ${safe(t.id)}">Copy hash</button></div></td><td><div class="table-main">${fmtUsdt(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}" data-requested-usdt="${safe(t.requestedUsdt ?? t.usdt)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
           $('adminDepositsEmpty').hidden = (data.transactions || []).length !== 0;
         } else {
-          $('adminPayoutRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)} · ${safe(t.holder||'')}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="admin-user-muted">${safe(t.bank||'')} · ${safe(t.branch||'')}</div><div class="copy-inline"><div class="admin-user-muted">A/C ${safe(t.account||masked(t.last4))} · ${safe(t.ifsc||'')}</div>${t.account ? `<button class="admin-copy-btn" type="button" data-copy-value="${safe(t.account)}" aria-label="Copy payout account number for ${safe(t.id)}">Copy account no.</button>` : ''}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${money(t.amount)}</div><div class="table-sub">${fmtNumber(t.usdt,6)} USDT reserved</div></td><td>${statusBadge(t.status)}${t.bankReference?`<div class="table-sub">Ref: ${safe(t.bankReference)}</div>`:''}</td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions">${t.status==='pending'?`<button class="primary-btn" data-admin-action="payout-approve" data-id="${safe(t.id)}">Approve</button>`:''}${t.status==='processing'?`<button class="primary-btn" data-admin-action="payout-complete" data-id="${safe(t.id)}">Mark successful</button><button class="secondary-btn" data-admin-action="payout-fail" data-id="${safe(t.id)}">Mark failed</button>`:''}<button class="danger-btn" data-admin-action="payout-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
+          $('adminPayoutRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)} · ${safe(t.holder||'')}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="admin-user-muted">${safe(t.bank||'')} · ${safe(t.branch||'')}</div><div class="copy-inline"><div class="admin-user-muted">A/C ${safe(t.account||masked(t.last4))} · ${safe(t.ifsc||'')}</div>${t.account ? `<button class="admin-copy-btn" type="button" data-copy-value="${safe(t.account)}" aria-label="Copy payout account number for ${safe(t.id)}">Copy account no.</button>` : ''}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${money(t.amount)}</div><div class="table-sub">${fmtUsdt(t.usdt,6)} USDT reserved</div></td><td>${statusBadge(t.status)}${t.bankReference?`<div class="table-sub">Ref: ${safe(t.bankReference)}</div>`:''}</td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions">${t.status==='pending'?`<button class="primary-btn" data-admin-action="payout-approve" data-id="${safe(t.id)}">Approve</button>`:''}${t.status==='processing'?`<button class="primary-btn" data-admin-action="payout-complete" data-id="${safe(t.id)}">Mark successful</button><button class="secondary-btn" data-admin-action="payout-fail" data-id="${safe(t.id)}">Mark failed</button>`:''}<button class="danger-btn" data-admin-action="payout-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
           $('adminPayoutsEmpty').hidden = (data.transactions || []).length !== 0;
         }
         updateAdminPagination(kind, data.pagination);
       } else if (activeAdminSubPage === 'users') {
         const list = adminLists.users;
         const data = await request(`/api/admin/users?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
-        $('adminUsersRows').innerHTML = (data.users || []).map(u=>`<tr><td><div class="table-main">${safe(u.name)}</div><div class="table-sub">${safe(u.id)}</div><div class="table-sub">Telegram: ${safe(u.telegramId || 'Not linked')}</div><div class="table-sub">Phone: ${safe(u.phoneNumber || 'Not provided')}</div></td><td>${safe(u.email)}</td><td>${safe(u.role)}</td><td>${fmtNumber(u.availableUsdt,4)}<div class="table-sub">Reserved ${fmtNumber(u.reservedUsdt,4)}</div></td><td>${safe(u.status)}</td></tr>`).join('');
+        $('adminUsersRows').innerHTML = (data.users || []).map(u=>`<tr><td><div class="table-main">${safe(u.name)}</div><div class="table-sub">${safe(u.id)}</div><div class="table-sub">Telegram: ${safe(u.telegramId || 'Not linked')}</div><div class="table-sub">Phone: ${safe(u.phoneNumber || 'Not provided')}</div></td><td>${safe(u.email)}</td><td>${safe(u.role)}</td><td>${fmtUsdt(u.availableUsdt,4)}<div class="table-sub">Reserved ${fmtUsdt(u.reservedUsdt,4)}</div></td><td>${safe(u.status)}</td></tr>`).join('');
         $('adminUsersEmpty').hidden = (data.users || []).length !== 0;
         updateAdminPagination('users', data.pagination);
       } else if (activeAdminSubPage === 'audit') {
@@ -1001,7 +1004,7 @@
     try {
       if(action==='deposit-approve') {
         const requestedUsdt = Number(button.dataset.requestedUsdt);
-        const enteredCredit = prompt(`Customer requested ${fmtNumber(requestedUsdt, 6)} USDT. Enter the actual USDT amount independently verified on-chain:`, fmtNumber(requestedUsdt, 6));
+        const enteredCredit = prompt(`Customer requested ${fmtUsdt(requestedUsdt, 6)} USDT. Enter the actual USDT amount independently verified on-chain:`, fmtNumber(requestedUsdt, 6));
         if (enteredCredit === null) return;
         const creditedUsdt = Number(String(enteredCredit).trim());
         if (!Number.isFinite(creditedUsdt) || creditedUsdt <= 0 || creditedUsdt > 10_000_000 || Math.round(creditedUsdt * 1_000_000) <= 0) {
@@ -1015,10 +1018,10 @@
           adjustmentReason = reason.trim();
           if (adjustmentReason.length < 3) { toast('An adjustment reason of at least 3 characters is required.', 'error'); return; }
         }
-        const confirmText = `Confirm independent verification of the TRC20 transaction, token, receiving address and confirmations.\n\nRequested: ${fmtNumber(requestedUsdt, 6)} USDT\nTo credit: ${fmtNumber(creditedUsdt, 6)} USDT${changedAmount ? `\nAdjustment: ${adjustmentReason}` : ''}\n\nThis will credit the verified amount exactly once.`;
+        const confirmText = `Confirm independent verification of the TRC20 transaction, token, receiving address and confirmations.\n\nRequested: ${fmtUsdt(requestedUsdt, 6)} USDT\nTo credit: ${fmtUsdt(creditedUsdt, 6)} USDT${changedAmount ? `\nAdjustment: ${adjustmentReason}` : ''}\n\nThis will credit the verified amount exactly once.`;
         if(!confirm(confirmText)) return;
         await request(`/api/admin/deposits/${encodeURIComponent(id)}/approve`,{method:'POST',body:{creditedUsdt, adjustmentReason}});
-        toast(`${fmtNumber(creditedUsdt, 6)} USDT verified and credited.`);
+        toast(`${fmtUsdt(creditedUsdt, 6)} USDT verified and credited.`);
       } else if(action==='deposit-reject') {
         const reason=prompt('Why is this deposit being rejected?'); if(!reason) return;
         await request(`/api/admin/deposits/${encodeURIComponent(id)}/reject`,{method:'POST',body:{reason}}); toast('Deposit rejected; no balance was credited.');
@@ -1216,7 +1219,7 @@
       $('payoutReviewAccount').textContent = accountNumber;
       $('payoutReviewIfsc').textContent = bank.ifsc || '—';
       $('payoutReviewAmount').textContent = money(amountInr);
-      $('payoutReviewUsdt').textContent = `${fmtNumber(usdtToReserve, 6)} USDT`;
+      $('payoutReviewUsdt').textContent = `${fmtUsdt(usdtToReserve, 6)} USDT`;
       $('payoutReviewRemaining').textContent = money(Math.max(0, availableInr - amountInr));
       pendingPayoutReview = { bankId, amountInr };
       $('payoutReviewModal').classList.add('open');

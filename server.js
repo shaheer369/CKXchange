@@ -13,7 +13,7 @@ const { ensureIndexes, inTransaction } = require('./lib/mongo');
 const { MongoClient } = require('mongodb');
 const { getVapidConfig, hasVapidConfig, allowedPushEndpoint, sendPush } = require('./lib/web-push');
 const {
-  id, now, toUsdtMicro, fromUsdtMicro, toPaise, fromPaise, safeEqual, newCsrf,
+  id, now, toUsdtMicro, fromUsdtMicro, canDeleteWithDustBalance, toPaise, fromPaise, safeEqual, newCsrf,
   validName, validEmail, validDepositAddress, validTransactionHash, duplicateKeyError
 } = require('./lib/domain');
 
@@ -366,7 +366,7 @@ function notificationInr(amountPaise) {
   return fromPaise(amountPaise).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function notificationUsdt(amountMicro) {
-  return fromUsdtMicro(amountMicro).toLocaleString('en-US', { maximumFractionDigits: 6 });
+  return '$' + fromUsdtMicro(amountMicro).toLocaleString('en-US', { maximumFractionDigits: 6 });
 }
 function abbreviatedHash(hash) {
   const value = String(hash || '');
@@ -547,6 +547,8 @@ app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, n
 
   let markedForDeletion = false;
   let deleted = false;
+  let deletionDustUsdt = 0;
+  let deletionDustInr = 0;
   try {
     const current = await db.collection('users').findOne({ _id: userId, status: 'active', role: 'user' }, { projection: { password_hash: 1 } });
     if (!current) return apiError(res, 409, 'This account is no longer active. Please sign in again or contact support.');
@@ -565,7 +567,14 @@ app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, n
       const transactions = db.collection('transactions');
       const user = await users.findOne({ _id: userId, role: 'user', status: 'deleting' }, { session: mongoSession });
       if (!user) throw new Error('DELETE_ACCOUNT_UNAVAILABLE');
-      if (Number(user.available_usdt_micro || 0) !== 0 || Number(user.reserved_usdt_micro || 0) !== 0) throw new Error('DELETE_BLOCKED_BALANCE');
+      const availableUsdtMicro = Number(user.available_usdt_micro || 0);
+      const reservedUsdtMicro = Number(user.reserved_usdt_micro || 0);
+      const deletionRate = await currentRate(mongoSession);
+      const availableInrValue = fromUsdtMicro(availableUsdtMicro) * deletionRate;
+      if (!canDeleteWithDustBalance(availableUsdtMicro, reservedUsdtMicro, deletionRate)) throw new Error('DELETE_BLOCKED_BALANCE');
+      // Preserve the waived sub-₹1 remainder in the audit trail before deleting the wallet record.
+      deletionDustUsdt = fromUsdtMicro(availableUsdtMicro);
+      deletionDustInr = availableInrValue;
       const openRequests = await transactions.countDocuments({ user_id: userId, status: { $in: ['pending', 'processing'] } }, { session: mongoSession });
       if (openRequests > 0) throw new Error('DELETE_BLOCKED_REQUESTS');
 
@@ -593,7 +602,7 @@ app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, n
       await db.collection('audit_log').insertOne({
         _id: id('AUD'), actor_id: deletedUserRef, actor_role: 'user', admin_id: null,
         action: 'user_account_deleted', target_id: deletedUserRef,
-        details: { financialRecordsPreserved: true, directProfileAndBankDataRemoved: true }, created_at: deletedAt
+        details: { financialRecordsPreserved: true, directProfileAndBankDataRemoved: true, remainingDustUsdt: deletionDustUsdt, remainingDustInrApprox: deletionDustInr, dustBalanceWaived: deletionDustUsdt > 0 }, created_at: deletedAt
       }, { session: mongoSession });
       const removed = await users.deleteOne({ _id: userId, status: 'deleting', role: 'user' }, { session: mongoSession });
       if (removed.deletedCount !== 1) throw new Error('DELETE_ACCOUNT_UNAVAILABLE');
@@ -609,7 +618,7 @@ app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, n
       try { await db.collection('users').updateOne({ _id: userId, status: 'deleting' }, { $set: { status: 'active' }, $unset: { deletion_requested_at: '' } }); }
       catch (restoreError) { console.error('[account-delete-restore-failed]', restoreError?.message || restoreError); }
     }
-    if (error.message === 'DELETE_BLOCKED_BALANCE') return apiError(res, 409, 'Account deletion is blocked while your available or reserved USDT balance is not zero. Resolve the balance first.');
+    if (error.message === 'DELETE_BLOCKED_BALANCE') return apiError(res, 409, 'Account deletion is blocked if your available USDT balance is worth ₹1 or more, or if any USDT is reserved. Available balance below ₹1 is allowed.');
     if (error.message === 'DELETE_BLOCKED_REQUESTS') return apiError(res, 409, 'Account deletion is blocked while deposits or payouts are Pending or Processing. Wait until all requests are resolved.');
     if (error.message === 'DELETE_ACCOUNT_UNAVAILABLE') return apiError(res, 409, 'This account is no longer available for deletion. Please sign in again.');
     return next(error);

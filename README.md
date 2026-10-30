@@ -233,6 +233,7 @@ Replace the example email and name. Use a new password of 14–128 characters co
 - Payout requests reserve available USDT atomically. Admin approval moves the payout to Processing; it should be marked Successful only after the bank/provider confirms the real transfer and a reference is recorded.
 - The INR/USDT rate is a configured reference value, not an automatic market quote. The admin can change it in the Admin panel. Existing transactions keep their recorded amounts.
 - The frontend and backend are served from the same Express origin. Admin API routes are centrally role-protected; browser-side changes do not grant admin permissions.
+- Account deletion allows an available USDT remainder only when its approximate value at the current configured INR/USDT rate is strictly below ₹1.00. Any reserved USDT and any Pending/Processing deposit or payout still block deletion; an allowed sub-₹1 remainder is recorded in the deletion audit event.
 
 ## PWA and notifications (v2.3.0)
 

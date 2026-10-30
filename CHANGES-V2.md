@@ -1,3 +1,10 @@
+## v2.4.8 — Dollar-denominated USDT displays and small-balance account deletion
+
+- Added a leading `$` to USDT wallet balances, reserved/deducted USDT, deposit amounts, payout estimates, audit values, and admin/user USDT balance displays.
+- Account deletion now allows a remaining available USDT dust balance only when its current INR equivalent is strictly below ₹1.00; any reserved USDT or Pending/Processing transaction still blocks deletion.
+- The sub-₹1 remainder is recorded in the account-deletion audit event for reconciliation.
+- Added unit and source checks for the ₹0.01 dust-balance case, the ₹1.00 boundary, and reserved-balance protection.
+
 ## v2.4.7 — Deposit credit correction, richer audit trail and PWA install control
 
 - Admins can enter the independently verified USDT amount before deposit approval. The amount defaults to the customer's request; adjustments require a reason and are saved with the audit event.
@@ -18,7 +25,7 @@
 
 ## Implemented in this source copy
 
-- Added a customer account-deletion flow with current-password verification, typed confirmation, blocking conditions for non-zero available/reserved balances and pending/processing requests, session invalidation, saved-bank removal, pseudonymous retention of financial ledger/transaction records, and an audit event.
+- Added a customer account-deletion flow with current-password verification, typed confirmation, blocking conditions for available balances worth ₹1 or more, any reserved balance, and pending/processing requests, session invalidation, saved-bank removal, pseudonymous retention of financial ledger/transaction records, and an audit event.
 - Removed the fixed-rate and data-storage items from Profile & Settings while preserving the app's real rate logic and admin rate configuration.
 - Added public Telegram support contact display and administrator-managed support username configuration stored in MongoDB.
 - Split the admin workspace into `/admin`, `/admin/deposits`, `/admin/payouts`, `/admin/users`, `/admin/audit`, and `/admin/settings` views.
