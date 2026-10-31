@@ -1,3 +1,11 @@
+## v2.4.12 — Profile & Settings redesign
+
+- Reorganized Profile into Personal Information, Bank Accounts, Security, Appearance, Notifications, App Settings, and Help & Support sections.
+- Added a compact profile identity card with name, email, user ID, and account status.
+- Replaced the profile summary with Available USDT and Reserved USDT balance cards; removed Total INR Sent from Profile.
+- Kept existing contact, password, bank navigation, theme, notifications, installation, support, account deletion, and sign-out behaviors.
+- Preserved the existing bottom navigation and theme palettes.
+
 ## v2.4.11 — Expandable admin request cards
 
 - Changed admin deposit and payout request queues to compact, tappable summary cards with expandable details.

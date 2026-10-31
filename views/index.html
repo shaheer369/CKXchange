@@ -6,13 +6,13 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#f6f2ff" name="theme-color"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
-<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.11"/>
-<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.11"/>
+<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.12"/>
+<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.12"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="CKXchange"/>
 <title>CKXchange — USDT to INR</title>
-<script src="/theme-init.js?v=2.4.11"></script>
+<script src="/theme-init.js?v=2.4.12"></script>
 <style>
     :root {
       color-scheme: dark;
@@ -670,12 +670,77 @@
       .theme-toggle-button { margin-left: 50px; }
     }
 
+
+    /* Compact Profile & Settings refresh; uses existing theme tokens only. */
+    .profile-hero { margin-bottom: 14px; }
+    .profile-hero-main { display:flex; align-items:center; gap:14px; min-width:0; }
+    .profile-avatar { width:52px; height:52px; border-radius:16px; flex:0 0 auto; font-size:15px; }
+    .profile-identity { min-width:0; flex:1; }
+    .profile-identity h2 { margin:0; font-size:17px; font-weight:760; letter-spacing:-.4px; overflow-wrap:anywhere; }
+    .profile-email { margin-top:4px; color:var(--muted); font-size:11px; overflow-wrap:anywhere; }
+    .profile-user-id { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:7px; color:var(--muted-2); font-size:9px; }
+    .profile-user-id code { color:var(--muted); font-size:9px; overflow-wrap:anywhere; }
+    .profile-account-status { flex:0 0 auto; padding:6px 9px; border-radius:999px; background:rgba(97,230,170,.1); color:var(--green); border:1px solid rgba(97,230,170,.22); font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; }
+    .profile-account-status.is-inactive { background:rgba(255,119,146,.1); color:var(--red); border-color:rgba(255,119,146,.24); }
+    .profile-balance-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+    .profile-balance-card { min-width:0; padding:16px 17px; border-radius:18px; border:1px solid var(--line); background:var(--surface); }
+    .profile-balance-label { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:10px; font-weight:650; }
+    .profile-balance-icon { display:grid; place-items:center; width:25px; height:25px; border-radius:8px; color:var(--violet); background:rgba(139,92,246,.12); font-weight:800; font-size:13px; }
+    .profile-balance-card.reserved .profile-balance-icon { color:var(--cyan); background:rgba(55,216,208,.1); }
+    .profile-balance-value { margin-top:11px; font-size:clamp(18px,2.4vw,24px); font-weight:780; letter-spacing:-.6px; overflow-wrap:anywhere; }
+    .profile-balance-foot { margin-top:4px; font-size:9px; color:var(--muted-2); }
+    .profile-section { margin-top:12px; padding:16px 18px; }
+    .profile-section-heading { display:flex; align-items:center; gap:10px; }
+    .profile-section-heading .settings-icon { width:32px; height:32px; border-radius:10px; }
+    .profile-section-heading .section-title { font-size:12px; }
+    .profile-contact-form { margin-top:12px; }
+    .profile-contact-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px; }
+    .profile-contact-grid .field { margin:0; }
+    .profile-contact-grid .field label { font-size:10px; }
+    .profile-contact-grid .field input { min-height:39px; font-size:11px; }
+    .profile-form-footer { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:11px; }
+    .profile-inline-status { color:var(--muted); font-size:9px; line-height:1.4; }
+    .profile-form-footer .secondary-btn, .profile-action-row .secondary-btn { min-height:34px; padding:0 12px; font-size:10px; }
+    .profile-action-row { padding:11px 0 0; margin-top:10px; }
+    .profile-action-row .settings-desc { margin-top:3px; }
+    .profile-count { color:var(--muted); font-size:10px; white-space:nowrap; }
+    .profile-settings-list { margin-top:6px; }
+    .profile-settings-list .settings-row { padding:10px 0; }
+    .profile-support-card { margin-top:11px; }
+    .profile-support-card .settings-name { font-size:11px; }
+    .profile-support-card .support-link { padding:9px 11px; font-size:10px; white-space:nowrap; }
+    .profile-danger-section { margin-top:14px; }
+    .profile-danger-section .danger-copy { margin:8px 0 10px; font-size:10px; }
+    .profile-danger-section .danger-form-grid { margin:10px 0; }
+    .profile-danger-section .danger-btn { min-height:38px; font-size:10px; }
+    .profile-signout { width:100%; margin-top:9px; min-height:40px; justify-content:center; }
+    @media (max-width:600px) {
+      .profile-hero, .profile-section { padding:14px; }
+      .profile-hero-main { align-items:flex-start; gap:11px; }
+      .profile-avatar { width:45px; height:45px; border-radius:14px; }
+      .profile-identity h2 { font-size:15px; }
+      .profile-account-status { padding:5px 7px; font-size:8px; }
+      .profile-balance-grid { gap:9px; }
+      .profile-balance-card { padding:13px 12px; border-radius:15px; }
+      .profile-balance-value { font-size:18px; }
+      .profile-contact-grid { grid-template-columns:1fr; gap:9px; }
+      .profile-form-footer { align-items:flex-start; flex-direction:column; }
+      .profile-form-footer .secondary-btn { width:100%; }
+      .profile-action-row { gap:8px; }
+      .profile-action-row .settings-content { flex:1 1 100%; }
+      .profile-action-row .profile-count { margin-left:auto; }
+      .profile-action-row .secondary-btn { min-width:68px; }
+      .profile-support-card { align-items:flex-start; flex-direction:column; }
+      .profile-support-card .support-link { width:100%; justify-content:center; }
+      .profile-danger-section .danger-form-grid { grid-template-columns:1fr; }
+    }
+
 </style>
 </head>
 <body class="auth-pending auth-restoring">
 <div class="auth-overlay" id="authOverlay">
 <section aria-labelledby="authTitle" class="auth-card">
-<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.11" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
+<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.12" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
 <h1 class="auth-title" id="authTitle">Restoring your session…</h1><p class="auth-copy" id="authCopy">Checking your saved sign-in securely. Please wait a moment.</p>
 <button class="primary-btn full auth-retry-button" hidden id="authRetryButton" type="button">Retry connection</button>
 <div class="auth-tabs"><button class="auth-tab active" data-auth-mode="login" type="button">Sign in</button><button class="auth-tab" data-auth-mode="register" type="button">Create account</button></div>
@@ -692,7 +757,7 @@
 <div class="app-shell">
 <aside aria-label="Main navigation" class="sidebar">
 <div class="brand">
-<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.11" alt="" /></div>
+<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.12" alt="" /></div>
 <div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div><div class="brand-sub">Move value forward</div></div>
 </div>
 <div class="nav-label">WORKSPACE</div>
@@ -716,7 +781,7 @@
 <div class="offline-banner" id="offlineBanner" role="status" hidden>Connection lost. You can view this screen, but balances and financial actions require a live connection.</div>
 <header class="topbar">
 <div class="topbar-left"><div class="title-stack">
-<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.11" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
+<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.12" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
 <div class="eyebrow" id="pageEyebrow">YOUR FINANCIAL OVERVIEW</div><h1 class="page-title" id="pageTitle">Good afternoon 👋</h1><div class="page-subtitle" id="pageSubtitle">Your wallet, your value — all in one place.</div>
 </div></div>
 <div class="top-actions"><div class="demo-chip" title="Test environment: no automated blockchain or bank transfer is enabled."><span class="demo-dot"></span> TEST MODE</div><button aria-label="Open notifications" class="notification-bell" id="notificationBell" title="Notifications"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/></svg><span class="notification-count" id="notificationBellCount" hidden>0</span></button><button aria-label="Help" class="icon-button" id="helpButton" title="About CKXchange"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M9.7 9a2.4 2.4 0 1 1 4 1.8c-1.1.8-1.7 1.2-1.7 2.7M12 17h.01" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"></path></svg></button></div>
@@ -865,20 +930,81 @@
 <div class="notification-list" id="notificationList" aria-live="polite"><div class="notification-empty">Sign in to view notifications.</div></div></section>
 </section>
 <section aria-label="Profile and settings" class="page" id="page-profile">
-<div class="page-panel" style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div class="avatar" style="width:60px;height:60px;border-radius:19px;font-size:19px">CX</div><div style="flex:1;min-width:170px"><div id="profileMemberName" style="font-size:18px;font-weight:760;letter-spacing:-.4px">CKXchange member</div><div id="profileMemberEmail" style="color:var(--muted);font-size:11px;margin-top:5px">Sign in to view account</div><div style="margin-top:10px"><span class="live-badge">● Authenticated account</span></div></div><div style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:8px 10px">MEMBER</div></div></div>
-<div class="stats-grid"><div class="stat-card"><div class="stat-top">Total INR sent <svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="profileTotal">₹0</div><div class="stat-foot">Successful payouts</div></div><div class="stat-card"><div class="stat-top">Saved banks <svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBanks">0</div><div class="stat-foot">Linked destinations</div></div><div class="stat-card"><div class="stat-top">Wallet balance <svg fill="none" viewbox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" stroke-width="1.6" width="17" x="3.5" y="6"></rect><path d="M3.5 10h17M16 15h1" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBalance">$0.0000</div><div class="stat-foot">Available USDT</div></div></div>
-<section class="page-panel"><h2 class="section-title">App settings</h2><p class="section-caption">Application details and your account controls.</p><div class="settings-list">
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.11</div></div>
-<div class="settings-row" id="pwaInstallRow" hidden><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="settings-content"><div class="settings-name">Install CKXchange</div><div class="settings-desc">Add CKXchange to your device for quick access.</div></div><button class="secondary-btn" id="pwaInstallButton" type="button">Install app</button></div>
-<div class="settings-row theme-setting-row"><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.2A8.6 8.6 0 0 1 8.8 3.5a8.8 8.8 0 1 0 11.7 11.7Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.5 3.5v5m-2.5-2.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div><div class="settings-content"><div class="settings-name">Appearance</div><div class="settings-desc" id="themeModeDescription">Light mode is enabled. You can switch to dark mode anytime.</div></div><button class="secondary-btn theme-toggle-button" id="themeModeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false"><span id="themeModeToggleLabel">Switch to dark mode</span></button></div>
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div><div class="settings-content"><div class="settings-name">Password &amp; security</div><div class="settings-desc">Change your account password using your current password.</div></div><button class="secondary-btn" id="openChangePassword" type="button" data-go="password">Change password</button></div>
-</div>
+  <section class="page-panel profile-hero">
+    <div class="profile-hero-main">
+      <div class="avatar profile-avatar">CX</div>
+      <div class="profile-identity">
+        <h2 id="profileMemberName">CKXchange member</h2>
+        <div class="profile-email" id="profileMemberEmail">Sign in to view account</div>
+        <div class="profile-user-id"><span>User ID</span><code id="profileMemberId">—</code></div>
+      </div>
+      <span class="profile-account-status" id="profileAccountStatus">Active</span>
+    </div>
+  </section>
 
-<section class="page-panel" id="contactSettingsPanel" style="margin-top:16px"><h2 class="section-title">Support contact details</h2><p class="section-caption">Add a Telegram username or numeric ID and phone number so CKXchange administrators can contact you if there is an issue with a deposit or payout. These details are visible to authorized administrators only.</p>
-<form id="contactSettingsForm"><div class="admin-settings-grid"><div class="field"><label for="telegramContactId">Telegram username or ID</label><input autocomplete="off" id="telegramContactId" maxlength="32" placeholder="@yourusername or numeric ID" spellcheck="false" type="text"><div class="lookup-status">You can enter @username or the numeric Telegram ID. Leave blank if you do not want to link Telegram.</div></div><div class="field"><label for="contactPhoneNumber">Phone number</label><input autocomplete="tel" id="contactPhoneNumber" inputmode="tel" maxlength="24" placeholder="e.g. +91 98765 43210" type="tel"><div class="lookup-status">Include country code for international numbers. Leave blank if you prefer not to share it.</div></div></div><div class="admin-settings-actions"><div class="admin-settings-warning" id="contactSettingsStatus">Your details are private and used for account support only.</div><button class="primary-btn" id="saveContactSettingsBtn" type="submit">Save contact details</button></div></form></section>
-<section class="page-panel" style="margin-top:16px"><div class="support-card"><div><h2 class="section-title" style="margin-bottom:6px">Customer support</h2><div class="section-caption" id="supportNotConfigured">Customer support is not configured yet.</div><div class="settings-value" id="supportUsernameValue" hidden></div></div><a class="support-link" hidden href="#" id="supportTelegramLink" rel="noopener noreferrer" target="_blank">Contact support on Telegram ↗</a></div></section>
-<section class="page-panel danger-zone" id="deleteAccountPanel" style="margin-top:16px"><h2 class="section-title">Delete account</h2><p class="danger-copy">This permanently removes your profile and saved bank accounts. Records needed for financial reconciliation are retained with your direct profile and bank details removed. You can delete your account when your available USDT balance is worth less than ₹1. Any reserved USDT or a Pending/Processing deposit or payout must be resolved first.</p><form id="deleteAccountForm"><div class="danger-form-grid"><div class="field"><label for="deleteAccountPassword">Current password</label><input autocomplete="current-password" id="deleteAccountPassword" maxlength="128" required type="password"></div><div class="field"><label for="deleteAccountConfirmation">Type DELETE to confirm</label><input autocomplete="off" id="deleteAccountConfirmation" maxlength="6" placeholder="DELETE" required type="text"></div></div><button class="danger-btn" id="deleteAccountSubmit" type="submit">Permanently delete account</button></form></section>
-<button class="secondary-btn" id="logoutButton" style="margin-top:6px"><svg fill="none" viewbox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3m10-7h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"></path></svg> Sign out</button></section>
+  <div class="profile-balance-grid" aria-label="Wallet balances">
+    <article class="profile-balance-card">
+      <div class="profile-balance-label"><span class="profile-balance-icon">$</span>Available USDT</div>
+      <div class="profile-balance-value" id="profileBalance">$0.0000</div>
+      <div class="profile-balance-foot">Ready to use</div>
+    </article>
+    <article class="profile-balance-card reserved">
+      <div class="profile-balance-label"><span class="profile-balance-icon">⌁</span>Reserved USDT</div>
+      <div class="profile-balance-value" id="profileReservedBalance">$0.0000</div>
+      <div class="profile-balance-foot">Held for active payouts</div>
+    </article>
+  </div>
+
+  <section class="page-panel profile-section" aria-labelledby="profilePersonalHeading">
+    <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.5" stroke="currentColor" stroke-width="1.7"/><path d="M5 20c.5-3.2 3.3-5 7-5s6.5 1.8 7 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><h2 class="section-title" id="profilePersonalHeading">Personal Information</h2></div>
+    <form id="contactSettingsForm" class="profile-contact-form">
+      <div class="profile-contact-grid">
+        <div class="field"><label for="telegramContactId">Telegram username or ID</label><input autocomplete="off" id="telegramContactId" maxlength="32" placeholder="@yourusername or numeric ID" spellcheck="false" type="text"></div>
+        <div class="field"><label for="contactPhoneNumber">Phone number</label><input autocomplete="tel" id="contactPhoneNumber" inputmode="tel" maxlength="24" placeholder="e.g. +91 98765 43210" type="tel"></div>
+      </div>
+      <div class="profile-form-footer"><span class="profile-inline-status" id="contactSettingsStatus" role="status">These details are visible to authorized administrators only.</span><button class="secondary-btn" id="saveContactSettingsBtn" type="submit">Save information</button></div>
+    </form>
+  </section>
+
+  <section class="page-panel profile-section" aria-labelledby="profileBanksHeading">
+    <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M3 9 12 4l9 5M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18M2 9h20" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><h2 class="section-title" id="profileBanksHeading">Bank Accounts</h2></div>
+    <div class="settings-row profile-action-row"><div class="settings-content"><div class="settings-name">Saved bank accounts</div><div class="settings-desc">Manage your linked payout destinations.</div></div><span class="profile-count" id="profileBanks">0</span><button class="secondary-btn" type="button" data-go="banks">Manage</button></div>
+  </section>
+
+  <section class="page-panel profile-section" aria-labelledby="profileSecurityHeading">
+    <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><h2 class="section-title" id="profileSecurityHeading">Security</h2></div>
+    <div class="settings-row profile-action-row"><div class="settings-content"><div class="settings-name">Password</div><div class="settings-desc">Keep your account protected with a strong password.</div></div><button class="secondary-btn" id="openChangePassword" type="button" data-go="password">Change</button></div>
+  </section>
+
+  <section class="page-panel profile-section" aria-labelledby="profileAppearanceHeading">
+    <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M20.5 15.2A8.6 8.6 0 0 1 8.8 3.5a8.8 8.8 0 1 0 11.7 11.7Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><h2 class="section-title" id="profileAppearanceHeading">Appearance</h2></div>
+    <div class="settings-row theme-setting-row"><div class="settings-content"><div class="settings-name">App theme</div><div class="settings-desc" id="themeModeDescription">Light mode is enabled. You can switch to dark mode anytime.</div></div><button class="secondary-btn theme-toggle-button" id="themeModeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false"><span id="themeModeToggleLabel">Switch to dark mode</span></button></div>
+  </section>
+
+  <section class="page-panel profile-section" aria-labelledby="profileNotificationsHeading">
+    <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><h2 class="section-title" id="profileNotificationsHeading">Notifications</h2></div>
+    <div class="settings-row profile-action-row"><div class="settings-content"><div class="settings-name">Notification center</div><div class="settings-desc">View alerts and manage browser notification preferences.</div></div><span class="profile-count" id="profileUnreadCount">0 unread</span><button class="secondary-btn" type="button" data-go="notifications">Open</button></div>
+  </section>
+
+  <section class="page-panel profile-section" aria-labelledby="profileAppHeading">
+    <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="2.8" width="14" height="18.4" rx="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M10 18h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><h2 class="section-title" id="profileAppHeading">App Settings</h2></div>
+    <div class="settings-list profile-settings-list">
+      <div class="settings-row"><div class="settings-content"><div class="settings-name">Application version</div></div><div class="settings-value">v2.4.12</div></div>
+      <div class="settings-row" id="pwaInstallRow" hidden><div class="settings-content"><div class="settings-name">Install CKXchange</div><div class="settings-desc">Add the app to your device for quick access.</div></div><button class="secondary-btn" id="pwaInstallButton" type="button">Install app</button></div>
+    </div>
+  </section>
+
+  <section class="page-panel profile-section" aria-labelledby="profileHelpHeading">
+    <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H18a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 17.5v-12Z" stroke="currentColor" stroke-width="1.7"/><path d="M4 6h14M8 11h8m-8 4h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><h2 class="section-title" id="profileHelpHeading">Help &amp; Support</h2></div>
+    <div class="support-card profile-support-card"><div class="settings-content"><div class="settings-name">Need help?</div><div class="settings-desc" id="supportNotConfigured">Customer support is not configured yet.</div><div class="settings-value" id="supportUsernameValue" hidden></div></div><a class="support-link" hidden href="#" id="supportTelegramLink" rel="noopener noreferrer" target="_blank">Contact on Telegram ↗</a></div>
+  </section>
+
+  <section class="page-panel danger-zone profile-danger-section" id="deleteAccountPanel">
+    <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><h2 class="section-title">Delete Account</h2></div>
+    <p class="danger-copy">Permanently remove your profile and saved bank accounts. Reserved funds or pending/processing transactions must be resolved first.</p>
+    <form id="deleteAccountForm"><div class="danger-form-grid"><div class="field"><label for="deleteAccountPassword">Current password</label><input autocomplete="current-password" id="deleteAccountPassword" maxlength="128" required type="password"></div><div class="field"><label for="deleteAccountConfirmation">Type DELETE to confirm</label><input autocomplete="off" id="deleteAccountConfirmation" maxlength="6" placeholder="DELETE" required type="text"></div></div><button class="danger-btn" id="deleteAccountSubmit" type="submit">Permanently delete account</button></form>
+  </section>
+  <button class="danger-btn profile-signout" id="logoutButton" type="button"><svg viewBox="0 0 24 24" fill="none"><path d="M10 17l5-5-5-5M15 12H3m10-7h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Sign Out</button>
 </section>
 <section aria-label="Change account password" class="page" id="page-password">
   <section class="page-panel">
@@ -922,5 +1048,5 @@
 <div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button></div>
 </section>
 </div>
-<script defer="True" src="/app.js?v=2.4.11"></script></body>
+<script defer="True" src="/app.js?v=2.4.12"></script></body>
 </html>

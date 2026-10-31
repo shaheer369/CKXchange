@@ -260,6 +260,9 @@
     const mobile = document.querySelector('.mobile-bottom'); if (mobile) mobile.classList.toggle('admin-view', admin);
     $('profileMemberName').textContent = state.user?.name || 'CKXchange member';
     $('profileMemberEmail').textContent = state.user?.email || '';
+    const profileId = $('profileMemberId'); if (profileId) profileId.textContent = state.user?.id || '—';
+    const profileStatus = $('profileAccountStatus');
+    if (profileStatus) { const active = String(state.user?.status || '').toLowerCase() === 'active'; profileStatus.textContent = active ? 'Active' : (state.user?.status || 'Unknown'); profileStatus.classList.toggle('is-inactive', !active); }
     const deletePanel = $('deleteAccountPanel'); if (deletePanel) deletePanel.hidden = admin;
     const miniName = document.querySelector('.mini-name'); if (miniName) miniName.textContent = state.user?.name || 'CKXchange member';
     const miniRole = document.querySelector('.mini-role'); if (miniRole) miniRole.textContent = admin ? 'Administrator' : 'Member';
@@ -400,6 +403,8 @@
     if (navBadge) { navBadge.hidden = count < 1; navBadge.textContent = count > 99 ? '99+' : String(count); }
     const unreadLabel = $('notificationUnreadLabel');
     if (unreadLabel) unreadLabel.textContent = `${count} unread`;
+    const profileUnread = $('profileUnreadCount');
+    if (profileUnread) profileUnread.textContent = `${count} unread`;
     const list = $('notificationList');
     if (list) {
       if (state.notificationPrefs?.inAppEnabled === false) list.innerHTML = '<div class="notification-empty">In-app notification history is disabled. Turn it on above to view saved notifications.</div>';
@@ -687,8 +692,10 @@
     const usdt = payouts.reduce((sum, t) => sum + Number(t.usdt || 0), 0);
     $('historyCount').textContent = payouts.length.toLocaleString('en-IN');
     $('historyTotal').textContent = money(total).replace(/\.00$/, ''); $('historyUsdt').textContent = fmtUsdt(usdt, 4);
-    $('profileTotal').textContent = money(total).replace(/\.00$/, ''); $('profileBanks').textContent = state.banks.length.toLocaleString('en-IN');
-    $('profileBalance').textContent = fmtUsdt(state.balance, 4); $('homeUsdt').textContent = fmtUsdt(state.balance, 4);
+    $('profileBanks').textContent = state.banks.length.toLocaleString('en-IN');
+    $('profileBalance').textContent = fmtUsdt(state.balance, 4);
+    $('profileReservedBalance').textContent = fmtUsdt(state.reservedUsdt, 4);
+    $('homeUsdt').textContent = fmtUsdt(state.balance, 4);
     $('homeInr').textContent = money(state.balance * state.rate); $('rechargeCurrent').textContent = fmtUsdt(state.balance,4);
     const activePage = document.querySelector('.page.active')?.id.replace('page-','') || 'home';
     $('pageSubtitle').textContent = (activePage === 'admin' ? ADMIN_META[activeAdminSubPage] : PAGE_META[activePage])?.[2] || '';
