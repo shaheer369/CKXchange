@@ -38,6 +38,8 @@
   let depositAddressRequestVersion = 0;
   let adminLoading = false;
   let expandedAdminRequestKey = '';
+  let selectedAdminUserId = '';
+  let blockedScreenSupportLoading = false;
   let adminDepositSettingsLoaded = false;
   let adminSupportSettingsLoaded = false;
   let activeAdminSubPage = 'overview';
@@ -82,7 +84,7 @@
   const fmtUsdt = (value, digits = 4) => `$${fmtNumber(value, digits)}`;
   const money = value => '₹' + Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const safe = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
-  const statusText = status => ({ pending:'Pending', processing:'Processing', success:'Successful', rejected:'Rejected', failed:'Failed' }[status] || 'Unknown');
+  const statusText = status => ({ active:'Active', blocked:'Blocked', deleted:'Deleted', deleting:'Deletion in progress', pending:'Pending', processing:'Processing', success:'Successful', rejected:'Rejected', failed:'Failed' }[String(status || '').toLowerCase()] || 'Unknown');
   const statusClass = status => `status-${['pending','processing','success','rejected','failed'].includes(status) ? status : 'pending'}`;
   const dateText = value => {
     const date = new Date(value);
@@ -125,7 +127,9 @@
       deposit_requested: 'Customer requested a USDT deposit',
       deposit_approved_manual_verification: 'USDT deposit approved',
       deposit_rejected: 'USDT deposit rejected',
-      user_account_deleted: 'Customer account deleted',
+      user_account_deleted: 'Customer account marked Deleted (records retained)',
+      user_blocked: 'Customer account blocked',
+      user_unblocked: 'Customer account unblocked',
       exchange_rate_and_trc20_address_updated: 'Rate / TRC20 settings updated',
       telegram_support_username_updated: 'Support Telegram updated'
     };
@@ -231,7 +235,11 @@
         await refreshCsrf();
         return request(url, options, false);
       }
-      const error = new Error(data.error || `Request failed (${response.status}).`); error.status = response.status; throw error;
+      if (data.code === 'ACCOUNT_BLOCKED') {
+        if (state.user) state.user.status = 'blocked';
+        showBlockedAccess();
+      }
+      const error = new Error(data.error || `Request failed (${response.status}).`); error.status = response.status; error.code = data.code || ''; throw error;
     }
     if (data.csrfToken) csrfToken = data.csrfToken;
     return data;
@@ -244,6 +252,10 @@
     return csrfToken;
   }
   function showAuth() {
+    const appShell = document.querySelector('.app-shell'); if (appShell) appShell.hidden = false;
+    const mobileNav = document.querySelector('.mobile-bottom'); if (mobileNav) mobileNav.hidden = false;
+    const blockedScreen = $('blockedAccountScreen'); if (blockedScreen) blockedScreen.hidden = true;
+    document.body.classList.remove('account-blocked');
     $('authOverlay').hidden = false; document.body.classList.remove('auth-restoring'); document.body.classList.add('auth-pending');
     $('authTitle').textContent = 'Sign in to CKXchange';
     const authCopy = $('authCopy'); if (authCopy) authCopy.textContent = 'Your account and transaction records are stored on the CKXchange server.';
@@ -252,6 +264,10 @@
     pollHandle = null;
   }
   function showApplication() {
+    const appShell = document.querySelector('.app-shell'); if (appShell) appShell.hidden = false;
+    const mobileNav = document.querySelector('.mobile-bottom'); if (mobileNav) mobileNav.hidden = false;
+    const blockedScreen = $('blockedAccountScreen'); if (blockedScreen) blockedScreen.hidden = true;
+    document.body.classList.remove('account-blocked');
     $('authOverlay').hidden = true; document.body.classList.remove('auth-pending', 'auth-restoring');
     const admin = state.user?.role === 'admin';
     const desktopAdminNav = $('adminNav'); if (desktopAdminNav) desktopAdminNav.hidden = !admin;
@@ -315,6 +331,20 @@
     const banner = $('offlineBanner');
     if (banner) banner.hidden = navigator.onLine;
     if (!navigator.onLine && state.user) toast('You are offline. Financial actions need a live connection.', 'error');
+  }
+  function showBlockedAccess() {
+    document.body.classList.remove('auth-pending', 'auth-restoring');
+    document.body.classList.add('account-blocked');
+    const shell = document.querySelector('.app-shell'); if (shell) shell.hidden = true;
+    const mobileNav = document.querySelector('.mobile-bottom'); if (mobileNav) mobileNav.hidden = true;
+    const overlay = $('authOverlay'); if (overlay) overlay.hidden = true;
+    const screen = $('blockedAccountScreen'); if (screen) screen.hidden = false;
+    if (pollHandle) clearInterval(pollHandle);
+    pollHandle = null;
+    if (!blockedScreenSupportLoading) {
+      blockedScreenSupportLoading = true;
+      loadSupportContact().finally(() => { blockedScreenSupportLoading = false; });
+    }
   }
   function isPwaRunningInstalled() {
     const standalone = Boolean(window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true || document.referrer.startsWith('android-app://'));
@@ -485,6 +515,10 @@
     if (link) { link.hidden = !valid; link.href = valid ? `https://t.me/${clean}` : '#'; }
     if (label) { label.hidden = !valid; label.textContent = valid ? `@${clean}` : ''; }
     if (fallback) { fallback.hidden = valid; fallback.textContent = valid ? '' : 'Customer support is not configured yet.'; }
+    const blockedLink = $('blockedSupportTelegramLink');
+    const blockedFallback = $('blockedSupportUnavailable');
+    if (blockedLink) { blockedLink.hidden = !valid; blockedLink.href = valid ? `https://t.me/${clean}` : '#'; }
+    if (blockedFallback) blockedFallback.hidden = valid;
   }
   async function loadSupportContact() {
     try { const result = await request('/api/support'); renderSupportContact(result.telegramUsername || ''); }
@@ -516,6 +550,11 @@
         }
       }
       state.user = auth.user;
+      if (state.user?.status === 'blocked') {
+        showBlockedAccess();
+        await loadSupportContact();
+        return;
+      }
       showApplication();
       await refreshState({ quiet:true });
       await loadSupportContact();
@@ -558,6 +597,14 @@
   function setAdminSubPage(route, { historyMode = 'none', load = true } = {}) {
     const subpage = ADMIN_SUBPAGES.includes(route) ? route : 'overview';
     if (activeAdminSubPage !== subpage) expandedAdminRequestKey = '';
+    if (subpage !== 'users') {
+      selectedAdminUserId = '';
+      if ($('adminUsersListView')) $('adminUsersListView').hidden = false;
+      if ($('adminUserDetailsView')) $('adminUserDetailsView').hidden = true;
+    } else if (!selectedAdminUserId) {
+      if ($('adminUsersListView')) $('adminUsersListView').hidden = false;
+      if ($('adminUserDetailsView')) $('adminUserDetailsView').hidden = true;
+    }
     activeAdminSubPage = subpage;
     document.querySelectorAll('[data-admin-subpage]').forEach(section => { section.hidden = section.dataset.adminSubpage !== subpage; });
     document.querySelectorAll('[data-admin-route]').forEach(link => link.classList.toggle('active', link.dataset.adminRoute === subpage));
@@ -1010,6 +1057,83 @@
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(raw).then(() => { setCopied(); toast('Copied to clipboard.'); }).catch(fallback);
     else fallback();
   }
+  function userInitials(name) {
+    return String(name || 'CX').trim().split(/\s+/).slice(0, 2).map(part => part[0] || '').join('').toUpperCase() || 'CX';
+  }
+  function renderAdminUserCard(user) {
+    const id = String(user.id || '');
+    return `<button class="admin-user-card" type="button" data-admin-user-open="${safe(id)}" aria-label="View details for ${safe(user.name)}">
+      <span class="admin-user-card-main"><strong class="admin-user-card-name">${safe(user.name || 'Unnamed user')}</strong><small class="admin-user-card-id">${safe(id)}</small></span>
+      <span class="admin-user-card-balance"><span>Available USDT</span><strong>${safe(fmtUsdt(user.availableUsdt, 4))}</strong></span>
+    </button>`;
+  }
+  function userDetailRow(label, value, copy = false) {
+    const display = value === null || value === undefined || value === '' ? 'Not provided' : String(value);
+    const copyButton = copy && display !== 'Not provided'
+      ? `<button class="admin-copy-icon" type="button" data-copy-value="${safe(display)}" aria-label="Copy ${safe(label)}" title="Copy ${safe(label)}"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.7"/></svg></button>` : '';
+    return `<div class="user-detail-row"><span class="user-detail-label">${safe(label)}</span><span class="user-detail-value"><span>${safe(display)}</span>${copyButton}</span></div>`;
+  }
+  function renderAdminUserDetails(payload) {
+    const user = payload.user || {};
+    const status = String(user.status || 'unknown').toLowerCase();
+    const statusClassName = ['active','blocked','deleted'].includes(status) ? status : 'pending';
+    const canManage = user.role === 'user' && ['active','blocked'].includes(status);
+    const actionButton = canManage
+      ? `<button class="${status === 'blocked' ? 'primary-btn' : 'danger-btn'} user-details-action" type="button" data-admin-user-action="${status === 'blocked' ? 'unblock' : 'block'}" data-id="${safe(user.id)}">${status === 'blocked' ? 'Unblock User' : 'Block User'}</button>`
+      : (status === 'deleted' ? '<span class="user-details-status deleted">Deleted account · retained</span>' : '');
+    const rows = (payload.transactions || []).map(txn => {
+      const isPayout = txn.type === 'payout';
+      const amount = isPayout ? money(txn.amountInr) : fmtUsdt(txn.creditedUsdt ?? txn.requestedUsdt ?? txn.usdt, 6);
+      const unit = isPayout ? 'INR payout' : 'USDT deposit';
+      return `<div class="user-transaction-row"><div><div class="user-transaction-ref">${safe(txn.id)}</div><div class="user-transaction-meta">${safe(unit)} · ${safe(dateText(txn.createdAt))}</div></div><div class="user-transaction-amount">${safe(amount)}<div class="${statusClass(txn.status)}" style="margin-top:5px">${safe(statusText(txn.status))}</div></div></div>`;
+    }).join('');
+    $('adminUserDetailsContent').innerHTML = `
+      <div class="user-details-hero">
+        <div class="user-details-avatar" aria-hidden="true">${safe(userInitials(user.name))}</div>
+        <div class="user-details-identity"><div class="user-details-name">${safe(user.name || 'Unnamed user')}</div><div class="user-details-id">${safe(user.id)}</div><span class="user-details-status ${statusClassName}">${safe(statusText(status))}</span></div>
+        ${actionButton}
+      </div>
+      <section class="user-details-section"><h3 class="user-details-section-title">Account &amp; contact</h3><div class="user-details-grid">
+        ${userDetailRow('User ID', user.id, true)}${userDetailRow('Email', user.email, true)}${userDetailRow('Phone', user.phoneNumber, true)}${userDetailRow('Telegram ID', user.telegramId, true)}${userDetailRow('Role', user.role)}${userDetailRow('Account status', statusText(status))}${userDetailRow('Joined', dateText(user.createdAt))}${user.deletedAt ? userDetailRow('Deleted on', dateText(user.deletedAt)) : ''}${user.blockedAt ? userDetailRow('Blocked on', dateText(user.blockedAt)) : ''}
+      </div></section>
+      <section class="user-details-section"><h3 class="user-details-section-title">Wallet balances</h3><div class="user-balance-grid"><div class="user-balance-box"><span>Available USDT</span><strong>${safe(fmtUsdt(user.availableUsdt, 6))}</strong></div><div class="user-balance-box"><span>Reserved USDT</span><strong>${safe(fmtUsdt(user.reservedUsdt, 6))}</strong></div></div></section>
+      <section class="user-details-section"><h3 class="user-details-section-title">Transaction history <span class="profile-count">${(payload.transactions || []).length}</span></h3><div class="user-transaction-list">${rows || '<div class="settings-desc">No transaction history found for this account.</div>'}</div></section>`;
+  }
+  async function openAdminUserDetails(userId) {
+    if (state.user?.role !== 'admin') { toast('Administrator access is required.', 'error'); return; }
+    selectedAdminUserId = String(userId || '');
+    $('adminUsersListView').hidden = true;
+    $('adminUserDetailsView').hidden = false;
+    $('adminUserDetailsContent').innerHTML = '<div class="settings-desc">Loading user details…</div>';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+      const payload = await request(`/api/admin/users/${encodeURIComponent(selectedAdminUserId)}`);
+      if (selectedAdminUserId) renderAdminUserDetails(payload);
+    } catch (error) {
+      $('adminUserDetailsContent').innerHTML = '<div class="empty-state"><div class="empty-title">Could not load user details</div><div class="empty-desc">Return to the user list and try again.</div></div>';
+      toast(error.message, 'error');
+    }
+  }
+  async function performAdminUserAction(button) {
+    const action = button.dataset.adminUserAction;
+    const userId = button.dataset.id;
+    if (!action || !userId || button.disabled) return;
+    const promptText = action === 'block'
+      ? 'Block this user? They will not be able to use deposits, payouts, bank management, notifications, or other app features. They will only see the customer support contact.'
+      : 'Unblock this user? They will be able to sign in and use CKXchange again.';
+    if (!confirm(promptText)) return;
+    button.disabled = true;
+    try {
+      const result = await request(`/api/admin/users/${encodeURIComponent(userId)}/${action}`, { method: 'POST', body: {} });
+      toast(result.message || (action === 'block' ? 'User blocked.' : 'User unblocked.'));
+      const list = adminLists.users;
+      const data = await request(`/api/admin/users?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
+      $('adminUsersRows').innerHTML = (data.users || []).map(renderAdminUserCard).join('');
+      $('adminUsersEmpty').hidden = (data.users || []).length !== 0;
+      updateAdminPagination('users', data.pagination);
+      await openAdminUserDetails(userId);
+    } catch (error) { toast(error.message, 'error'); button.disabled = false; }
+  }
   async function loadAdmin({ refreshDepositSettings = false, refreshSupportSettings = false } = {}) {
     if (adminLoading || state.user?.role !== 'admin') return;
     adminLoading = true;
@@ -1038,9 +1162,10 @@
       } else if (activeAdminSubPage === 'users') {
         const list = adminLists.users;
         const data = await request(`/api/admin/users?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
-        $('adminUsersRows').innerHTML = (data.users || []).map(u=>`<tr><td><div class="table-main">${safe(u.name)}</div><div class="table-sub">${safe(u.id)}</div><div class="table-sub">Telegram: ${safe(u.telegramId || 'Not linked')}</div><div class="table-sub">Phone: ${safe(u.phoneNumber || 'Not provided')}</div></td><td>${safe(u.email)}</td><td>${safe(u.role)}</td><td>${fmtUsdt(u.availableUsdt,4)}<div class="table-sub">Reserved ${fmtUsdt(u.reservedUsdt,4)}</div></td><td>${safe(u.status)}</td></tr>`).join('');
+        $('adminUsersRows').innerHTML = (data.users || []).map(renderAdminUserCard).join('');
         $('adminUsersEmpty').hidden = (data.users || []).length !== 0;
         updateAdminPagination('users', data.pagination);
+        if (selectedAdminUserId && !$('adminUserDetailsView').hidden) await openAdminUserDetails(selectedAdminUserId);
       } else if (activeAdminSubPage === 'audit') {
         const list = adminLists.audit;
         const data = await request(`/api/admin/audit?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
@@ -1139,6 +1264,15 @@
       if(!confirm(`Remove ${bank.holder}'s saved account ending ${bank.last4}? Previous transaction history will be kept.`)) return;
       try { await request(`/api/banks/${encodeURIComponent(bank.id)}`,{method:'DELETE'}); await refreshState({quiet:true}); toast('Saved bank account removed.'); }
       catch(error){toast(error.message,'error');} return;
+    }
+    const adminUserCard=event.target.closest('[data-admin-user-open]');
+    if(adminUserCard){await openAdminUserDetails(adminUserCard.dataset.adminUserOpen);return;}
+    const adminUserAction=event.target.closest('[data-admin-user-action]');
+    if(adminUserAction){await performAdminUserAction(adminUserAction);return;}
+    if(event.target.closest('#adminUsersBack')){
+      selectedAdminUserId=''; $('adminUserDetailsView').hidden=true; $('adminUsersListView').hidden=false;
+      $('pageTitle').textContent=ADMIN_META.users[1]; $('pageSubtitle').textContent=ADMIN_META.users[2];
+      window.scrollTo({top:0,behavior:'smooth'}); return;
     }
     const adminSlipButton=event.target.closest('[data-view-admin-transaction]');
     if(adminSlipButton){await openAdminReceipt(adminSlipButton.dataset.viewAdminTransaction);return;}

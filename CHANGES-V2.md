@@ -1,4 +1,4 @@
-## v2.4.12 — Profile & Settings redesign
+## v2.4.13 — Profile & Settings redesign
 
 - Reorganized Profile into Personal Information, Bank Accounts, Security, Appearance, Notifications, App Settings, and Help & Support sections.
 - Added a compact profile identity card with name, email, user ID, and account status.

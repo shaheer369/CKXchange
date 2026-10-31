@@ -319,6 +319,25 @@ async function waitForStart(proc, origin) {
   const adminPayoutNotes = await api(origin, '/api/notifications', { cookie: admin.cookie });
   assert.ok(adminPayoutNotes.data.notifications.some(row => row.kind === 'payout_success' && row.body.includes('₹1,000.00') && row.body.includes('ending 7654')), "admin successful payout notification should include amount and bank last four digits");
 
+  // Admin user details expose account/contact/balance/transaction data and block/unblock is enforced server-side.
+  const userDetailsBeforeBlock = await api(origin, `/api/admin/users/${encodeURIComponent(customer.user.id)}`, { cookie: admin.cookie });
+  assert.equal(userDetailsBeforeBlock.response.status, 200, 'admin should be able to open a dedicated user details record');
+  assert.equal(userDetailsBeforeBlock.data.user.id, customer.user.id, 'user details must include the exact user ID');
+  assert.ok(userDetailsBeforeBlock.data.transactions.length > 0, 'user details should include transaction history');
+  const blockedUser = await api(origin, `/api/admin/users/${encodeURIComponent(customer.user.id)}/block`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} });
+  assert.equal(blockedUser.response.status, 200, `admin should block an active customer: ${JSON.stringify(blockedUser.data)}`);
+  assert.equal((await api(origin, '/api/auth/me', { cookie: customer.cookie })).data.user.status, 'blocked', 'blocked customer may authenticate only to see the restricted-account screen');
+  const blockedStateResponse = await api(origin, '/api/state', { cookie: customer.cookie });
+  assert.equal(blockedStateResponse.response.status, 403, 'blocked customer cannot read normal app state');
+  assert.equal(blockedStateResponse.data.code, 'ACCOUNT_BLOCKED', 'blocked customer response should identify the account restriction');
+  assert.equal((await api(origin, '/api/support', { cookie: customer.cookie })).response.status, 200, 'blocked customers can still retrieve customer support contact');
+  assert.equal((await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: 'F'.repeat(64) } })).response.status, 403, 'blocked customer cannot submit a deposit');
+  const blockedDetails = await api(origin, `/api/admin/users/${encodeURIComponent(customer.user.id)}`, { cookie: admin.cookie });
+  assert.equal(blockedDetails.data.user.status, 'blocked', 'admin details should show blocked status');
+  const unblockedUser = await api(origin, `/api/admin/users/${encodeURIComponent(customer.user.id)}/unblock`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} });
+  assert.equal(unblockedUser.response.status, 200, 'admin should unblock a blocked customer');
+  assert.equal((await api(origin, '/api/auth/me', { cookie: customer.cookie })).data.user.status, 'active', 'unblocked existing session should regain active status');
+
   // Exercise account deletion against a disposable account with no balances or open requests.
   const deletionCsrf = await api(origin, '/api/auth/csrf');
   const deletionRegistration = await api(origin, '/api/auth/register', {
@@ -345,21 +364,28 @@ async function waitForStart(proc, origin) {
   const deletionResult = await api(origin, '/api/account/delete', { method: 'POST', cookie: deletionCookie, csrf: deletionToken, body: { password: 'DeleteCustomer12345', confirmation: 'DELETE' } });
   assert.equal(deletionResult.response.status, 200, `account deletion failed: ${JSON.stringify(deletionResult.data)}`);
   assert.equal((await api(origin, '/api/auth/me', { cookie: deletionCookie })).response.status, 401, 'deleted customer sessions must no longer authenticate');
-  assert.equal(await testDb.collection('users').findOne({ _id: deletionUserId }), null, 'deleted account profile must be removed');
-  assert.equal(await testDb.collection('banks').countDocuments({ user_id: deletionUserId }), 0, 'saved bank records must be deleted');
-  assert.equal(await testDb.collection('notifications').countDocuments({ recipient_id: deletionUserId }), 0, 'account deletion must remove private notification history');
+  const deletedProfile = await testDb.collection('users').findOne({ _id: deletionUserId, status: 'deleted' });
+  assert.ok(deletedProfile, 'deleted account profile must remain with deleted status');
+  assert.equal(deletedProfile.name, 'DELETE TEST USER', 'deleted account must retain the customer name');
+  assert.equal(deletedProfile.email, 'delete-test@example.com', 'deleted account must retain the customer email');
+  assert.equal(await testDb.collection('banks').countDocuments({ user_id: deletionUserId }), 1, 'saved bank records must be retained for admin review');
+  assert.equal(await testDb.collection('notifications').countDocuments({ recipient_id: deletionUserId }), 1, 'notification history must be retained');
   assert.equal(await testDb.collection('push_subscriptions').countDocuments({ user_id: deletionUserId }), 0, 'account deletion must remove browser push subscriptions');
   assert.equal(await testDb.collection('push_outbox').countDocuments({ recipient_id: deletionUserId }), 0, 'account deletion must remove queued push notifications');
-  assert.equal(await testDb.collection('notification_preferences').countDocuments({ _id: deletionUserId }), 0, 'account deletion must remove notification preferences');
+  assert.equal(await testDb.collection('notification_preferences').countDocuments({ _id: deletionUserId }), 1, 'notification preferences should remain associated with the retained account');
   const preservedTransaction = await testDb.collection('transactions').findOne({ _id: historicId });
   assert.ok(preservedTransaction, 'financial transaction history must be preserved for reconciliation');
-  assert.equal(preservedTransaction.user_deleted, true);
-  assert.match(preservedTransaction.user_id, /^DELETED-/);
-  for (const field of ['bank_id','bank_cipher','bank_holder','bank_last4','bank_name','branch_name','ifsc']) assert.equal(Object.hasOwn(preservedTransaction, field), false, `retained transaction must not contain ${field}`);
+  assert.equal(preservedTransaction.user_id, deletionUserId, 'historic transaction must remain linked to the retained customer profile');
+  assert.equal(preservedTransaction.bank_holder, 'DELETE TEST USER', 'historic transaction bank details must be retained');
+  assert.equal(preservedTransaction.bank_name, 'Smoke Bank');
   const preservedLedger = await testDb.collection('ledger').findOne({ transaction_id: historicId });
-  assert.equal(preservedLedger.user_deleted, true, 'ledger should retain its entry but pseudonymize the deleted customer reference');
-  assert.equal(preservedLedger.user_id, preservedTransaction.user_id);
-  assert.ok(await testDb.collection('audit_log').findOne({ action: 'user_account_deleted', target_id: preservedTransaction.user_id }), 'account deletion should create a pseudonymous audit entry');
+  assert.equal(preservedLedger.user_id, deletionUserId, 'ledger must remain linked to the retained customer profile');
+  assert.ok(await testDb.collection('audit_log').findOne({ action: 'user_account_deleted', target_id: deletionUserId }), 'account deletion should create an audit entry for the retained customer ID');
+  const deletedLoginCsrf = await api(origin, '/api/auth/csrf');
+  const deletedLogin = await api(origin, '/api/auth/login', { method: 'POST', cookie: deletedLoginCsrf.cookie, csrf: deletedLoginCsrf.data.csrfToken, body: { email: 'delete-test@example.com', password: 'DeleteCustomer12345' } });
+  assert.equal(deletedLogin.response.status, 401, 'deleted account must not be allowed to sign in again');
+  const deletedUserAdminDetails = await api(origin, `/api/admin/users/${encodeURIComponent(deletionUserId)}`, { cookie: admin.cookie });
+  assert.equal(deletedUserAdminDetails.data.user.status, 'deleted', 'admins must still be able to inspect a deleted user record');
 
   const newAdminPassword = 'SmokeTestAdminPasswordChanged2026!';
   const adminReset = spawnSync(node, ['scripts/create-admin.js', '--email', 'smoke-admin@example.com', '--name', 'SMOKE ADMIN'], { cwd: root, env: { ...env, ADMIN_PASSWORD: newAdminPassword }, encoding: 'utf8' });

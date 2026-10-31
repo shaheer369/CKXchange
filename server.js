@@ -180,16 +180,21 @@ async function requireAuth(req, res, next) {
   try {
     if (!req.session.userId) return apiError(res, 401, 'Please sign in to continue.');
     const user = await db.collection('users').findOne({ _id: req.session.userId });
-    if (!user || user.status !== 'active') {
+    if (!user || !['active', 'blocked'].includes(user.status)) {
       req.session.destroy(() => {});
       return apiError(res, 401, 'Your account is unavailable. Please contact support.');
     }
     req.user = user;
+    if (user.status === 'blocked') {
+      const requestPath = String(req.originalUrl || req.path || '').split('?')[0];
+      const permitted = requestPath === '/api/auth/me' || (requestPath === '/api/auth/logout' && req.method === 'POST');
+      if (!permitted) return res.status(403).json({ code: 'ACCOUNT_BLOCKED', error: 'Your account is blocked. You can only contact customer support.' });
+    }
     next();
   } catch (error) { next(error); }
 }
 function requireAdmin(req, res, next) {
-  if (req.user?.role !== 'admin') return apiError(res, 403, 'Administrator access is required.');
+  if (req.user?.role !== 'admin' || req.user?.status !== 'active') return apiError(res, 403, 'An active administrator account is required.');
   next();
 }
 app.use('/api', (req, res, next) => {
@@ -251,7 +256,8 @@ async function getUserState(userId) {
 function auditSafeUser(user) {
   return { id: user._id || user.id, name: user.name, email: user.email, role: user.role, status: user.status,
     telegramId: user.telegram_id || '', phoneNumber: user.phone_number || '',
-    availableUsdt: fromUsdtMicro(user.available_usdt_micro), reservedUsdt: fromUsdtMicro(user.reserved_usdt_micro), createdAt: user.created_at };
+    availableUsdt: fromUsdtMicro(user.available_usdt_micro), reservedUsdt: fromUsdtMicro(user.reserved_usdt_micro),
+    createdAt: user.created_at, blockedAt: user.blocked_at || null, deletedAt: user.deleted_at || null };
 }
 function regenerateSession(req) { return new Promise((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve())); }
 function saveSession(req) { return new Promise((resolve, reject) => req.session.save(error => error ? reject(error) : resolve())); }
@@ -499,7 +505,7 @@ app.post('/api/auth/login', authLimiter, async (req, res, next) => {
     if (password.length > 128) return apiError(res, 401, 'Email or password is incorrect, or the account is disabled.');
     const user = await db.collection('users').findOne({ email });
     const validPassword = user ? await bcrypt.compare(password, user.password_hash) : (await bcrypt.hash(password || 'unknown-user-password', 12), false);
-    if (!user || !validPassword || user.status !== 'active') return apiError(res, 401, 'Email or password is incorrect, or the account is disabled.');
+    if (!user || !validPassword || !['active', 'blocked'].includes(user.status)) return apiError(res, 401, 'Email or password is incorrect, or the account is unavailable.');
     await regenerateSession(req);
     req.session.userId = user._id; req.session.csrfToken = newCsrf();
     await saveSession(req);
@@ -567,7 +573,7 @@ app.post('/api/auth/logout', requireAuth, (req, res, next) => {
     res.json({ ok: true });
   });
 });
-// Account deletion preserves financial reconciliation while removing direct profile and bank identifiers.
+// Customer deletion is a soft delete: the profile and linked records remain available to administrators.
 app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, next) => {
   const userId = req.user._id;
   const password = String(req.body?.password || '');
@@ -592,7 +598,6 @@ app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, n
     if (locked.modifiedCount !== 1) return apiError(res, 409, 'The account could not be locked for deletion. Refresh and try again.');
     markedForDeletion = true;
 
-    const deletedUserRef = `DELETED-${crypto.createHmac('sha256', ENCRYPTION_KEY).update(`deleted-user:${userId}`).digest('hex').slice(0, 32).toUpperCase()}`;
     await runTransaction(async mongoSession => {
       const users = db.collection('users');
       const transactions = db.collection('transactions');
@@ -603,46 +608,38 @@ app.post('/api/account/delete', requireAuth, mutationLimiter, async (req, res, n
       const deletionRate = await currentRate(mongoSession);
       const availableInrValue = fromUsdtMicro(availableUsdtMicro) * deletionRate;
       if (!canDeleteWithDustBalance(availableUsdtMicro, reservedUsdtMicro, deletionRate)) throw new Error('DELETE_BLOCKED_BALANCE');
-      // Preserve the waived sub-₹1 remainder in the audit trail before deleting the wallet record.
       deletionDustUsdt = fromUsdtMicro(availableUsdtMicro);
       deletionDustInr = availableInrValue;
       const openRequests = await transactions.countDocuments({ user_id: userId, status: { $in: ['pending', 'processing'] } }, { session: mongoSession });
       if (openRequests > 0) throw new Error('DELETE_BLOCKED_REQUESTS');
 
       const deletedAt = now();
-      await transactions.updateMany(
-        { user_id: userId },
-        {
-          $set: { user_id: deletedUserRef, user_deleted: true, user_deleted_at: deletedAt },
-          $unset: { bank_id: '', bank_cipher: '', bank_holder: '', bank_last4: '', bank_name: '', branch_name: '', ifsc: '' }
-        },
+      const markedDeleted = await users.updateOne(
+        { _id: userId, role: 'user', status: 'deleting' },
+        { $set: { status: 'deleted', deleted_at: deletedAt, deletion_dust_usdt: deletionDustUsdt, deletion_dust_inr_approx: deletionDustInr }, $unset: { deletion_requested_at: '' } },
         { session: mongoSession }
       );
-      await db.collection('ledger').updateMany({ user_id: userId }, { $set: { user_id: deletedUserRef, user_deleted: true } }, { session: mongoSession });
-      await db.collection('banks').deleteMany({ user_id: userId }, { session: mongoSession });
-      // Account deletion also removes personal notification records, browser endpoints, and retry work.
-      await db.collection('notifications').deleteMany({ recipient_id: userId }, { session: mongoSession });
+      if (markedDeleted.modifiedCount !== 1) throw new Error('DELETE_ACCOUNT_UNAVAILABLE');
+
+      // Keep the user document, bank records, notifications, ledger and transactions intact.
+      // Only revoke active browser sessions and push delivery endpoints after deletion.
       await db.collection('push_subscriptions').deleteMany({ user_id: userId }, { session: mongoSession });
       await db.collection('push_outbox').deleteMany({ recipient_id: userId }, { session: mongoSession });
-      await db.collection('notification_preferences').deleteOne({ _id: userId }, { session: mongoSession });
-      // connect-mongo versions may store the session payload as either an object or JSON text.
       const sessionsCollection = db.collection('sessions');
       const sessionJsonMatch = new RegExp(`\"userId\"\\s*:\\s*\"${escapedRegExp(userId)}\"`);
       const matchingSessions = await sessionsCollection.find({ $or: [{ 'session.userId': userId }, { session: sessionJsonMatch }] }, { session: mongoSession, projection: { _id: 1 } }).toArray();
       if (matchingSessions.length) await sessionsCollection.deleteMany({ _id: { $in: matchingSessions.map(row => row._id) } }, { session: mongoSession });
       await db.collection('audit_log').insertOne({
-        _id: id('AUD'), actor_id: deletedUserRef, actor_role: 'user', admin_id: null,
-        action: 'user_account_deleted', target_id: deletedUserRef,
-        details: { financialRecordsPreserved: true, directProfileAndBankDataRemoved: true, remainingDustUsdt: deletionDustUsdt, remainingDustInrApprox: deletionDustInr, dustBalanceWaived: deletionDustUsdt > 0 }, created_at: deletedAt
+        _id: id('AUD'), actor_id: userId, actor_role: 'user', admin_id: null,
+        action: 'user_account_deleted', target_id: userId,
+        details: { userProfileRetained: true, bankRecordsRetained: true, financialRecordsPreserved: true, remainingDustUsdt: deletionDustUsdt, remainingDustInrApprox: deletionDustInr, dustBalanceWaived: deletionDustUsdt > 0 }, created_at: deletedAt
       }, { session: mongoSession });
-      const removed = await users.deleteOne({ _id: userId, status: 'deleting', role: 'user' }, { session: mongoSession });
-      if (removed.deletedCount !== 1) throw new Error('DELETE_ACCOUNT_UNAVAILABLE');
     });
     deleted = true;
     req.session.destroy(error => {
       if (error) return next(error);
       res.clearCookie('ckx.sid', { path: '/', sameSite: 'lax', secure: IS_PROD, httpOnly: true });
-      return res.json({ ok: true, message: 'Your account has been deleted. Financial records required for reconciliation were retained without your direct profile or bank account details.' });
+      return res.json({ ok: true, message: 'Your account is now marked as Deleted. Your profile and transaction records are retained for administrative and reconciliation purposes. You have been signed out.' });
     });
   } catch (error) {
     if (markedForDeletion && !deleted) {
@@ -1008,11 +1005,63 @@ app.get('/api/admin/payouts/:id/receipt', async (req, res, next) => {
 app.get('/api/admin/users', async (req, res, next) => {
   try {
     const { page: requestedPage, pageSize, q } = parseListParams(req);
-    const filter = q ? { $or: [{ _id: new RegExp(escapedRegExp(q), 'i') }, { name: new RegExp(escapedRegExp(q), 'i') }, { email: new RegExp(escapedRegExp(q), 'i') }] } : {};
+    const filter = q ? { $or: [{ _id: new RegExp(escapedRegExp(q), 'i') }, { name: new RegExp(escapedRegExp(q), 'i') }, { email: new RegExp(escapedRegExp(q), 'i') }, { phone_number: new RegExp(escapedRegExp(q), 'i') }, { telegram_id: new RegExp(escapedRegExp(q), 'i') }] } : {};
     const total = await db.collection('users').countDocuments(filter);
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
-    const rows = await db.collection('users').find(filter, { projection: { name: 1, email: 1, role: 1, status: 1, telegram_id: 1, phone_number: 1, available_usdt_micro: 1, reserved_usdt_micro: 1, created_at: 1 } }).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
+    const rows = await db.collection('users').find(filter, { projection: { name: 1, email: 1, role: 1, status: 1, telegram_id: 1, phone_number: 1, available_usdt_micro: 1, reserved_usdt_micro: 1, created_at: 1, blocked_at: 1, deleted_at: 1 } }).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
+    res.set('Cache-Control', 'no-store, max-age=0');
     res.json({ users: rows.map(auditSafeUser), pagination: paginationDto(page, pageSize, total) });
+  } catch (error) { next(error); }
+});
+app.get('/api/admin/users/:id', async (req, res, next) => {
+  try {
+    const user = await db.collection('users').findOne({ _id: String(req.params.id) });
+    if (!user) return apiError(res, 404, 'User was not found.');
+    const transactions = await db.collection('transactions').find({ user_id: user._id }).sort({ created_at: -1 }).limit(100).toArray();
+    res.set('Cache-Control', 'no-store, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.json({ user: auditSafeUser(user), transactions: transactions.map(row => ({
+      id: row._id, type: row.type, status: row.status,
+      amountInr: row.type === 'payout' ? fromPaise(row.amount_paise) : null,
+      usdt: fromUsdtMicro(row.usdt_micro),
+      requestedUsdt: row.type === 'deposit' ? fromUsdtMicro(row.requested_usdt_micro ?? row.usdt_micro) : null,
+      creditedUsdt: row.type === 'deposit' && row.credited_usdt_micro != null ? fromUsdtMicro(row.credited_usdt_micro) : null,
+      createdAt: row.created_at
+    })) });
+  } catch (error) { next(error); }
+});
+app.post('/api/admin/users/:id/block', mutationLimiter, async (req, res, next) => {
+  try {
+    const targetId = String(req.params.id);
+    if (targetId === req.user._id) return apiError(res, 409, 'You cannot block your own administrator account.');
+    const target = await db.collection('users').findOne({ _id: targetId, role: 'user' });
+    if (!target) return apiError(res, 404, 'Customer account was not found.');
+    if (target.status === 'deleted' || target.status === 'deleting') return apiError(res, 409, 'Deleted or deleting accounts cannot be blocked.');
+    if (target.status === 'blocked') return apiError(res, 409, 'This account is already blocked.');
+    const timestamp = now();
+    const result = await db.collection('users').updateOne(
+      { _id: targetId, role: 'user', status: 'active' },
+      { $set: { status: 'blocked', blocked_at: timestamp, blocked_by: req.user._id, updated_at: timestamp } }
+    );
+    if (result.modifiedCount !== 1) return apiError(res, 409, 'The user status changed. Refresh the user details and try again.');
+    await audit(req.user._id, 'user_blocked', targetId, { userName: target.name, userEmail: target.email });
+    res.json({ ok: true, message: 'User blocked. They can only contact customer support.', status: 'blocked' });
+  } catch (error) { next(error); }
+});
+app.post('/api/admin/users/:id/unblock', mutationLimiter, async (req, res, next) => {
+  try {
+    const targetId = String(req.params.id);
+    const target = await db.collection('users').findOne({ _id: targetId, role: 'user' });
+    if (!target) return apiError(res, 404, 'Customer account was not found.');
+    if (target.status !== 'blocked') return apiError(res, 409, 'Only blocked accounts can be unblocked.');
+    const timestamp = now();
+    const result = await db.collection('users').updateOne(
+      { _id: targetId, role: 'user', status: 'blocked' },
+      { $set: { status: 'active', unblocked_at: timestamp, unblocked_by: req.user._id, updated_at: timestamp }, $unset: { blocked_at: '', blocked_by: '' } }
+    );
+    if (result.modifiedCount !== 1) return apiError(res, 409, 'The user status changed. Refresh the user details and try again.');
+    await audit(req.user._id, 'user_unblocked', targetId, { userName: target.name, userEmail: target.email });
+    res.json({ ok: true, message: 'User unblocked. They can sign in and use CKXchange again.', status: 'active' });
   } catch (error) { next(error); }
 });
 app.get('/api/admin/audit', async (req, res, next) => {

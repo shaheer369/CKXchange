@@ -6,13 +6,13 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#f6f2ff" name="theme-color"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
-<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.12"/>
-<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.12"/>
+<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.13"/>
+<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.13"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="CKXchange"/>
 <title>CKXchange — USDT to INR</title>
-<script src="/theme-init.js?v=2.4.12"></script>
+<script src="/theme-init.js?v=2.4.13"></script>
 <style>
     :root {
       color-scheme: dark;
@@ -735,12 +735,76 @@
       .profile-danger-section .danger-form-grid { grid-template-columns:1fr; }
     }
 
+
+    .admin-user-cards { display:grid; grid-template-columns:minmax(0,1fr); gap:9px; width:100%; max-width:100%; min-width:0; }
+    .admin-user-card { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-width:0; max-width:100%; padding:13px 14px; border:1px solid var(--line-strong); border-radius:15px; background:var(--surface-2); color:var(--text); text-align:left; cursor:pointer; }
+    .admin-user-card:hover { border-color:var(--violet); }
+    .admin-user-card:focus-visible { outline:2px solid var(--violet); outline-offset:3px; }
+    .admin-user-card-main { min-width:0; display:grid; gap:4px; }
+    .admin-user-card-name { min-width:0; color:var(--text); font-size:13px; font-weight:750; overflow-wrap:anywhere; }
+    .admin-user-card-id { min-width:0; color:var(--muted); font-size:10px; overflow-wrap:anywhere; word-break:break-word; }
+    .admin-user-card-balance { flex:0 0 auto; min-width:0; display:grid; justify-items:end; gap:4px; }
+    .admin-user-card-balance span { color:var(--muted); font-size:9px; }
+    .admin-user-card-balance strong { color:var(--text); font-size:12px; font-weight:750; white-space:nowrap; }
+    .user-details-topbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:15px; }
+    .user-details-kicker { color:var(--muted); font-size:9px; font-weight:800; letter-spacing:1.2px; }
+    .user-details-back { display:inline-flex; align-items:center; gap:7px; }
+    .user-details-hero { display:flex; align-items:center; gap:12px; min-width:0; padding:15px; border:1px solid var(--line-strong); border-radius:17px; background:linear-gradient(135deg,rgba(139,92,246,.12),rgba(236,170,216,.10)),var(--surface-2); }
+    .user-details-avatar { display:grid; place-items:center; flex:0 0 48px; width:48px; height:48px; border-radius:15px; background:linear-gradient(135deg,var(--violet),#d9a9e8); color:#fff; font-size:16px; font-weight:850; }
+    .user-details-identity { flex:1 1 auto; min-width:0; display:grid; gap:5px; }
+    .user-details-name { color:var(--text); font-size:16px; font-weight:800; overflow-wrap:anywhere; }
+    .user-details-id { color:var(--muted); font-size:10px; overflow-wrap:anywhere; word-break:break-word; }
+    .user-details-status { display:inline-flex; align-items:center; gap:5px; width:max-content; max-width:100%; padding:4px 8px; border-radius:999px; background:rgba(97,230,170,.12); color:var(--green); font-size:9px; font-weight:800; text-transform:uppercase; }
+    .user-details-status.blocked,.user-details-status.deleted { background:rgba(255,119,146,.12); color:var(--red); }
+    .user-details-status.pending { background:rgba(240,196,120,.13); color:#d99b35; }
+    .user-details-action { flex:0 0 auto; }
+    .user-details-section { margin-top:13px; padding:14px; border:1px solid var(--line); border-radius:15px; background:var(--surface-2); min-width:0; }
+    .user-details-section-title { margin:0 0 10px; color:var(--text); font-size:12px; font-weight:800; }
+    .user-details-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:0; min-width:0; }
+    .user-detail-row { display:flex; align-items:center; justify-content:space-between; gap:9px; min-width:0; padding:9px 0; border-top:1px solid var(--line); }
+    .user-detail-row:first-child { border-top:0; }
+    .user-detail-label { flex:0 0 104px; color:var(--muted); font-size:10px; }
+    .user-detail-value { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex:1 1 auto; min-width:0; color:var(--text); text-align:right; font-size:11px; font-weight:650; overflow-wrap:anywhere; word-break:break-word; }
+    .user-detail-value .admin-copy-icon { flex:0 0 27px; width:27px; height:27px; }
+    .user-balance-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+    .user-balance-box { min-width:0; padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--surface-3); }
+    .user-balance-box span { display:block; color:var(--muted); font-size:9px; }
+    .user-balance-box strong { display:block; margin-top:6px; color:var(--text); font-size:14px; font-weight:800; overflow-wrap:anywhere; }
+    .user-transaction-list { display:grid; gap:8px; }
+    .user-transaction-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px 10px; min-width:0; padding:10px 0; border-top:1px solid var(--line); }
+    .user-transaction-row:first-child { border-top:0; }
+    .user-transaction-ref { min-width:0; color:var(--text); font-size:10px; font-weight:750; overflow-wrap:anywhere; }
+    .user-transaction-meta { color:var(--muted); font-size:9px; line-height:1.45; }
+    .user-transaction-amount { align-self:center; color:var(--text); font-size:11px; font-weight:750; text-align:right; white-space:nowrap; }
+    .blocked-account-screen { position:fixed; z-index:700; inset:0; display:grid; place-items:center; padding:22px; background:var(--bg); color:var(--text); overflow-y:auto; }
+    .blocked-account-card { width:min(440px,100%); padding:27px; border:1px solid var(--line-strong); border-radius:24px; background:var(--surface); box-shadow:var(--shadow); text-align:center; }
+    .blocked-account-logo { width:54px; height:54px; margin:0 auto 18px; }
+    .blocked-account-logo img { display:block; width:100%; height:100%; object-fit:contain; }
+    .blocked-account-badge { display:inline-flex; padding:5px 9px; border-radius:999px; background:rgba(255,119,146,.13); color:var(--red); font-size:9px; font-weight:850; letter-spacing:1px; }
+    .blocked-account-card h1 { margin:13px 0 8px; color:var(--text); font-size:23px; letter-spacing:-.5px; }
+    .blocked-account-card p { margin:9px 0; color:var(--muted); font-size:12px; line-height:1.6; }
+    .blocked-account-support-copy { margin-top:18px !important; }
+    .blocked-account-support-link { margin-top:15px; text-decoration:none; }
+    .blocked-account-unavailable { margin-top:13px; color:var(--muted); font-size:11px; line-height:1.5; }
+    body.account-blocked .app-shell, body.account-blocked .mobile-bottom, body.account-blocked #authOverlay, body.account-blocked #toastRegion { display:none !important; }
+    @media (max-width:560px) { .admin-user-card { padding:12px; } .user-details-hero { padding:12px; } .user-details-action { width:100%; } .user-details-hero { flex-wrap:wrap; } .user-details-hero .user-details-action { flex:1 1 100%; } .user-detail-label { flex-basis:92px; } .blocked-account-card { padding:22px 18px; } }
 </style>
 </head>
 <body class="auth-pending auth-restoring">
+<section class="blocked-account-screen" id="blockedAccountScreen" hidden aria-labelledby="blockedAccountTitle">
+  <div class="blocked-account-card">
+    <div class="blocked-account-logo"><img src="/icons/ckx-logo-192.png?v=2.4.13" alt="CKXchange" /></div>
+    <span class="blocked-account-badge">ACCOUNT BLOCKED</span>
+    <h1 id="blockedAccountTitle">Your account is blocked</h1>
+    <p>Access to CKXchange has been temporarily restricted by an administrator. You cannot submit deposits, request payouts, manage your account, or perform other app actions while this restriction is active.</p>
+    <p class="blocked-account-support-copy">Contact customer support if you believe this is a mistake or need help.</p>
+    <a class="primary-btn full blocked-account-support-link" id="blockedSupportTelegramLink" hidden href="#" target="_blank" rel="noopener noreferrer">Contact customer support on Telegram ↗</a>
+    <div class="blocked-account-unavailable" id="blockedSupportUnavailable" hidden>Customer support is not configured. Please use the support contact previously provided by CKXchange.</div>
+  </div>
+</section>
 <div class="auth-overlay" id="authOverlay">
 <section aria-labelledby="authTitle" class="auth-card">
-<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.12" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
+<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.13" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
 <h1 class="auth-title" id="authTitle">Restoring your session…</h1><p class="auth-copy" id="authCopy">Checking your saved sign-in securely. Please wait a moment.</p>
 <button class="primary-btn full auth-retry-button" hidden id="authRetryButton" type="button">Retry connection</button>
 <div class="auth-tabs"><button class="auth-tab active" data-auth-mode="login" type="button">Sign in</button><button class="auth-tab" data-auth-mode="register" type="button">Create account</button></div>
@@ -757,7 +821,7 @@
 <div class="app-shell">
 <aside aria-label="Main navigation" class="sidebar">
 <div class="brand">
-<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.12" alt="" /></div>
+<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.13" alt="" /></div>
 <div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div><div class="brand-sub">Move value forward</div></div>
 </div>
 <div class="nav-label">WORKSPACE</div>
@@ -781,7 +845,7 @@
 <div class="offline-banner" id="offlineBanner" role="status" hidden>Connection lost. You can view this screen, but balances and financial actions require a live connection.</div>
 <header class="topbar">
 <div class="topbar-left"><div class="title-stack">
-<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.12" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
+<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.13" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
 <div class="eyebrow" id="pageEyebrow">YOUR FINANCIAL OVERVIEW</div><h1 class="page-title" id="pageTitle">Good afternoon 👋</h1><div class="page-subtitle" id="pageSubtitle">Your wallet, your value — all in one place.</div>
 </div></div>
 <div class="top-actions"><div class="demo-chip" title="Test environment: no automated blockchain or bank transfer is enabled."><span class="demo-dot"></span> TEST MODE</div><button aria-label="Open notifications" class="notification-bell" id="notificationBell" title="Notifications"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/></svg><span class="notification-count" id="notificationBellCount" hidden>0</span></button><button aria-label="Help" class="icon-button" id="helpButton" title="About CKXchange"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M9.7 9a2.4 2.4 0 1 1 4 1.8c-1.1.8-1.7 1.2-1.7 2.7M12 17h.01" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"></path></svg></button></div>
@@ -900,10 +964,18 @@
 <div aria-label="Payout request pagination" class="admin-pagination"><span id="adminPayoutsPageInfo">Page 1 of 1 · 0 records</span><div class="admin-pagination-controls"><button class="secondary-btn" data-admin-page-prev="payouts" disabled type="button">Previous</button><button class="secondary-btn" data-admin-page-next="payouts" disabled type="button">Next</button></div></div></section>
 </section>
 <section class="admin-subpage" data-admin-subpage="users" hidden id="adminPageUsers">
-<section class="page-panel admin-section"><div class="section-row" style="margin-top:0"><div><h2 class="section-title">Users</h2><div class="section-caption">Search by name/email; balances and account status are shown without secrets.</div></div><button class="secondary-btn" data-admin-refresh="">Refresh</button></div>
-<form class="admin-list-toolbar" id="adminUsersSearchForm"><input aria-label="Search users" autocomplete="off" id="adminUsersSearch" maxlength="80" placeholder="Search name, email, or user ID"><button class="secondary-btn" type="submit">Search</button></form>
-<div class="admin-table-wrap"><table class="history-table admin-table"><thead><tr><th>Name / ID</th><th>Email</th><th>Role</th><th>Available / reserved USDT</th><th>Status</th></tr></thead><tbody id="adminUsersRows"></tbody></table></div><div class="empty-state" hidden id="adminUsersEmpty"><div class="empty-title">No matching users</div></div>
-<div aria-label="User pagination" class="admin-pagination"><span id="adminUsersPageInfo">Page 1 of 1 · 0 records</span><div class="admin-pagination-controls"><button class="secondary-btn" data-admin-page-prev="users" disabled type="button">Previous</button><button class="secondary-btn" data-admin-page-next="users" disabled type="button">Next</button></div></div></section>
+<section class="page-panel admin-section">
+  <div id="adminUsersListView">
+    <div class="section-row" style="margin-top:0"><div><h2 class="section-title">Users</h2><div class="section-caption">Select a customer to view account details, balances, and transaction history.</div></div><button class="secondary-btn" data-admin-refresh="">Refresh</button></div>
+    <form class="admin-list-toolbar" id="adminUsersSearchForm"><input aria-label="Search users" autocomplete="off" id="adminUsersSearch" maxlength="80" placeholder="Search name, email, phone, or user ID"><button class="secondary-btn" type="submit">Search</button></form>
+    <div class="admin-user-cards" id="adminUsersRows" aria-label="Customer accounts"></div><div class="empty-state" hidden id="adminUsersEmpty"><div class="empty-title">No matching users</div></div>
+    <div aria-label="User pagination" class="admin-pagination"><span id="adminUsersPageInfo">Page 1 of 1 · 0 records</span><div class="admin-pagination-controls"><button class="secondary-btn" data-admin-page-prev="users" disabled type="button">Previous</button><button class="secondary-btn" data-admin-page-next="users" disabled type="button">Next</button></div></div>
+  </div>
+  <div id="adminUserDetailsView" hidden>
+    <div class="user-details-topbar"><button class="secondary-btn user-details-back" id="adminUsersBack" type="button"><span aria-hidden="true">←</span> Back to Users</button><span class="user-details-kicker">CUSTOMER ACCOUNT</span></div>
+    <div id="adminUserDetailsContent" aria-live="polite"></div>
+  </div>
+</section>
 </section>
 <section class="admin-subpage" data-admin-subpage="audit" hidden id="adminPageAudit">
 <section class="page-panel admin-section"><div class="section-row" style="margin-top:0"><div><h2 class="section-title">Audit log</h2><div class="section-caption">Newest events first. Payout events show the actor, timestamp, PAY reference, destination account, account holder, amount, and a view-slip action.</div></div><button class="secondary-btn" data-admin-refresh="">Refresh</button></div>
@@ -989,7 +1061,7 @@
   <section class="page-panel profile-section" aria-labelledby="profileAppHeading">
     <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="2.8" width="14" height="18.4" rx="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M10 18h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><h2 class="section-title" id="profileAppHeading">App Settings</h2></div>
     <div class="settings-list profile-settings-list">
-      <div class="settings-row"><div class="settings-content"><div class="settings-name">Application version</div></div><div class="settings-value">v2.4.12</div></div>
+      <div class="settings-row"><div class="settings-content"><div class="settings-name">Application version</div></div><div class="settings-value">v2.4.13</div></div>
       <div class="settings-row" id="pwaInstallRow" hidden><div class="settings-content"><div class="settings-name">Install CKXchange</div><div class="settings-desc">Add the app to your device for quick access.</div></div><button class="secondary-btn" id="pwaInstallButton" type="button">Install app</button></div>
     </div>
   </section>
@@ -1001,7 +1073,7 @@
 
   <section class="page-panel danger-zone profile-danger-section" id="deleteAccountPanel">
     <div class="profile-section-heading"><span class="settings-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><h2 class="section-title">Delete Account</h2></div>
-    <p class="danger-copy">Permanently remove your profile and saved bank accounts. Reserved funds or pending/processing transactions must be resolved first.</p>
+    <p class="danger-copy">Mark your account as Deleted. Your profile and transaction history will remain available to authorized administrators for reconciliation. Reserved funds or pending/processing transactions must be resolved first.</p>
     <form id="deleteAccountForm"><div class="danger-form-grid"><div class="field"><label for="deleteAccountPassword">Current password</label><input autocomplete="current-password" id="deleteAccountPassword" maxlength="128" required type="password"></div><div class="field"><label for="deleteAccountConfirmation">Type DELETE to confirm</label><input autocomplete="off" id="deleteAccountConfirmation" maxlength="6" placeholder="DELETE" required type="text"></div></div><button class="danger-btn" id="deleteAccountSubmit" type="submit">Permanently delete account</button></form>
   </section>
   <button class="danger-btn profile-signout" id="logoutButton" type="button"><svg viewBox="0 0 24 24" fill="none"><path d="M10 17l5-5-5-5M15 12H3m10-7h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Sign Out</button>
@@ -1048,5 +1120,5 @@
 <div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button></div>
 </section>
 </div>
-<script defer="True" src="/app.js?v=2.4.12"></script></body>
+<script defer="True" src="/app.js?v=2.4.13"></script></body>
 </html>
