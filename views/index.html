@@ -6,13 +6,13 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#f6f2ff" name="theme-color"/>
 <link rel="manifest" href="/manifest.webmanifest"/>
-<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.9"/>
-<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.9"/>
+<link rel="icon" type="image/png" href="/icons/ckx-logo-192.png?v=2.4.11"/>
+<link rel="apple-touch-icon" href="/icons/ckx-logo-192.png?v=2.4.11"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="CKXchange"/>
 <title>CKXchange — USDT to INR</title>
-<script src="/theme-init.js?v=2.4.9"></script>
+<script src="/theme-init.js?v=2.4.11"></script>
 <style>
     :root {
       color-scheme: dark;
@@ -387,6 +387,39 @@
     .audit-detail-hash { flex:1 1 150px; min-width:0; max-width:100%; overflow-wrap:anywhere; word-break:break-word; white-space:normal; color:#bcc2d8; font-size:10px; }
     .nav-notification-count { margin-left:auto; min-width:19px; border-radius:999px; padding:2px 6px; text-align:center; background:rgba(255,119,146,.18); color:#ff9aaa; font-size:10px; font-weight:800; }
     .admin-table td { vertical-align:top; }
+    .admin-request-list { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; width:100%; min-width:0; max-width:100%; }
+    .admin-request-card { width:100%; min-width:0; max-width:100%; overflow:hidden; padding:15px 16px; border:1px solid var(--line-strong); border-radius:16px; background:var(--surface-2); }
+    .admin-request-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; min-width:0; padding-bottom:11px; border-bottom:1px solid var(--line); }
+    .admin-request-user { min-width:0; color:var(--text); font-size:14px; font-weight:760; line-height:1.4; overflow-wrap:anywhere; }
+    .admin-request-fields { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; }
+    .admin-request-field { display:grid; grid-template-columns:minmax(120px,.82fr) minmax(0,1.18fr); align-items:center; gap:12px; min-width:0; padding:10px 0; border-bottom:1px solid var(--line); }
+    .admin-request-field > span { color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+    .admin-request-value { display:flex; justify-content:flex-end; align-items:center; gap:8px; min-width:0; color:var(--text); text-align:right; }
+    .admin-request-value strong { min-width:0; max-width:100%; color:var(--text); font-size:13px; font-weight:650; line-height:1.45; overflow-wrap:anywhere; word-break:break-word; }
+    .admin-request-value small { display:block; color:var(--muted); font-size:10px; line-height:1.45; }
+    .admin-request-value:has(small) { flex-direction:column; align-items:flex-end; gap:2px; }
+    .admin-request-code { display:block; min-width:0; max-width:100%; color:var(--text); font-size:11px; line-height:1.45; overflow-wrap:anywhere; word-break:break-all; white-space:normal; }
+    .admin-copy-icon { display:inline-grid; place-items:center; flex:0 0 30px; width:30px; height:30px; padding:0; border:1px solid var(--line-strong); border-radius:9px; background:var(--surface-3); color:var(--muted); }
+    .admin-copy-icon svg { width:15px; height:15px; }
+    .admin-copy-icon:hover, .admin-copy-icon.is-copied { color:var(--violet); border-color:var(--violet); }
+    .admin-request-summary { display:flex; flex-direction:column; width:100%; min-width:0; padding:0; border:0; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+    .admin-request-summary:focus-visible { outline:2px solid var(--violet); outline-offset:4px; border-radius:10px; }
+    .admin-request-summary-top { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; width:100%; min-width:0; padding-bottom:9px; border-bottom:1px solid var(--line); }
+    .admin-request-summary-line { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-width:0; padding:8px 0; border-bottom:1px solid var(--line); }
+    .admin-request-summary-line > span { color:var(--muted); font-size:12px; }
+    .admin-request-summary-line > strong { min-width:0; max-width:68%; color:var(--text); text-align:right; font-size:13px; font-weight:650; overflow-wrap:anywhere; }
+    .admin-request-summary-amount-usdt { white-space:nowrap; }
+    .admin-request-summary-bottom { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; min-width:0; padding-top:10px; }
+    .admin-request-summary-bottom code { min-width:0; color:var(--muted); font-size:10px; overflow-wrap:anywhere; word-break:break-word; }
+    .admin-request-expand-label { display:inline-flex; align-items:center; gap:5px; flex:0 0 auto; color:var(--violet); font-size:11px; font-weight:700; }
+    .admin-request-chevron { width:15px; height:15px; transition:transform .18s ease; }
+    .admin-request-card.is-expanded .admin-request-chevron { transform:rotate(180deg); }
+    .admin-request-details { margin-top:12px; }
+    .admin-request-details[hidden] { display:none !important; }
+    .admin-request-card.is-expanded { border-color:var(--violet); }
+    .admin-request-card .admin-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; min-width:0; margin-top:13px; }
+    .admin-request-card .admin-actions button { min-width:0; min-height:40px; padding-inline:8px; font-size:11px; }
+    @media (max-width:420px) { .admin-request-card { padding:13px 12px; } .admin-request-field { grid-template-columns:minmax(96px,.72fr) minmax(0,1.28fr); gap:8px; } .admin-request-field > span { font-size:11px; } .admin-request-value strong { font-size:12px; } }
     .admin-actions { display:flex; flex-wrap:wrap; gap:6px; min-width:160px; }
     .admin-actions button { min-height:32px; border-radius:9px; padding:0 9px; font-size:10px; }
     .admin-hash { max-width:240px; overflow-wrap:anywhere; font-size:10px; color:#bcc2d8; }
@@ -642,7 +675,7 @@
 <body class="auth-pending auth-restoring">
 <div class="auth-overlay" id="authOverlay">
 <section aria-labelledby="authTitle" class="auth-card">
-<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.9" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
+<div class="auth-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.11" alt="" /></div><div><div class="brand-name">CKXchange</div><div class="brand-sub">USDT · INR PLATFORM</div></div></div>
 <h1 class="auth-title" id="authTitle">Restoring your session…</h1><p class="auth-copy" id="authCopy">Checking your saved sign-in securely. Please wait a moment.</p>
 <button class="primary-btn full auth-retry-button" hidden id="authRetryButton" type="button">Retry connection</button>
 <div class="auth-tabs"><button class="auth-tab active" data-auth-mode="login" type="button">Sign in</button><button class="auth-tab" data-auth-mode="register" type="button">Create account</button></div>
@@ -659,7 +692,7 @@
 <div class="app-shell">
 <aside aria-label="Main navigation" class="sidebar">
 <div class="brand">
-<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.9" alt="" /></div>
+<div aria-hidden="true" class="brand-mark"><img src="/icons/icon-192.png?v=2.4.11" alt="" /></div>
 <div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div><div class="brand-sub">Move value forward</div></div>
 </div>
 <div class="nav-label">WORKSPACE</div>
@@ -683,7 +716,7 @@
 <div class="offline-banner" id="offlineBanner" role="status" hidden>Connection lost. You can view this screen, but balances and financial actions require a live connection.</div>
 <header class="topbar">
 <div class="topbar-left"><div class="title-stack">
-<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.9" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
+<div class="mobile-brand"><div class="brand-mark"><img src="/icons/icon-192.png?v=2.4.11" alt="" /></div><div class="brand-name">CKX<span style="color:#a895ff">change</span></div></div>
 <div class="eyebrow" id="pageEyebrow">YOUR FINANCIAL OVERVIEW</div><h1 class="page-title" id="pageTitle">Good afternoon 👋</h1><div class="page-subtitle" id="pageSubtitle">Your wallet, your value — all in one place.</div>
 </div></div>
 <div class="top-actions"><div class="demo-chip" title="Test environment: no automated blockchain or bank transfer is enabled."><span class="demo-dot"></span> TEST MODE</div><button aria-label="Open notifications" class="notification-bell" id="notificationBell" title="Notifications"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"/></svg><span class="notification-count" id="notificationBellCount" hidden>0</span></button><button aria-label="Help" class="icon-button" id="helpButton" title="About CKXchange"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M9.7 9a2.4 2.4 0 1 1 4 1.8c-1.1.8-1.7 1.2-1.7 2.7M12 17h.01" stroke="currentColor" stroke-linecap="round" stroke-width="1.7"></path></svg></button></div>
@@ -792,13 +825,13 @@
 <section class="admin-subpage" data-admin-subpage="deposits" hidden id="adminPageDeposits">
 <section class="page-panel admin-section"><div class="section-row" style="margin-top:0"><div><h2 class="section-title">USDT deposit requests</h2><div class="section-caption">Oldest pending claims first. Verify transaction, token, amount, and receiving address before crediting.</div></div><button class="secondary-btn" data-admin-refresh="">Refresh</button></div>
 <form class="admin-list-toolbar" id="adminDepositsSearchForm"><input aria-label="Search deposits" autocomplete="off" id="adminDepositsSearch" maxlength="80" placeholder="Search transaction ID, hash, user name, or email"><button class="secondary-btn" type="submit">Search</button></form>
-<div class="admin-table-wrap"><table class="history-table admin-table"><thead><tr><th>User</th><th>Network / transaction hash</th><th>Amount</th><th>Submitted</th><th>Actions</th></tr></thead><tbody id="adminDepositsRows"></tbody></table></div><div class="empty-state" hidden id="adminDepositsEmpty"><div class="empty-title">No matching pending deposits</div><div class="empty-desc">Try a different search or refresh the queue.</div></div>
+<div class="admin-request-list" id="adminDepositsRows" aria-label="USDT deposit requests"></div><div class="empty-state" hidden id="adminDepositsEmpty"><div class="empty-title">No matching pending deposits</div><div class="empty-desc">Try a different search or refresh the queue.</div></div>
 <div aria-label="Deposit request pagination" class="admin-pagination"><span id="adminDepositsPageInfo">Page 1 of 1 · 0 records</span><div class="admin-pagination-controls"><button class="secondary-btn" data-admin-page-prev="deposits" disabled type="button">Previous</button><button class="secondary-btn" data-admin-page-next="deposits" disabled type="button">Next</button></div></div></section>
 </section>
 <section class="admin-subpage" data-admin-subpage="payouts" hidden id="adminPagePayouts">
 <section class="page-panel admin-section"><div class="section-row" style="margin-top:0"><div><h2 class="section-title">INR payout requests</h2><div class="section-caption">Pending requests are shown first. Processing payouts remain reserved until they are completed, rejected, or failed.</div></div><button class="secondary-btn" data-admin-refresh="">Refresh</button></div>
 <form class="admin-list-toolbar" id="adminPayoutsSearchForm"><input aria-label="Search payouts" autocomplete="off" id="adminPayoutsSearch" maxlength="80" placeholder="Search transaction ID, user, email, or account number (full or last 4)"><button class="secondary-btn" type="submit">Search</button></form>
-<div class="admin-table-wrap"><table class="history-table admin-table"><thead><tr><th>User / bank</th><th>Amount</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="adminPayoutRows"></tbody></table></div><div class="empty-state" hidden id="adminPayoutsEmpty"><div class="empty-title">No matching pending payouts</div><div class="empty-desc">Try a different search or refresh the queue.</div></div>
+<div class="admin-request-list" id="adminPayoutRows" aria-label="INR payout requests"></div><div class="empty-state" hidden id="adminPayoutsEmpty"><div class="empty-title">No matching pending payouts</div><div class="empty-desc">Try a different search or refresh the queue.</div></div>
 <div aria-label="Payout request pagination" class="admin-pagination"><span id="adminPayoutsPageInfo">Page 1 of 1 · 0 records</span><div class="admin-pagination-controls"><button class="secondary-btn" data-admin-page-prev="payouts" disabled type="button">Previous</button><button class="secondary-btn" data-admin-page-next="payouts" disabled type="button">Next</button></div></div></section>
 </section>
 <section class="admin-subpage" data-admin-subpage="users" hidden id="adminPageUsers">
@@ -835,7 +868,7 @@
 <div class="page-panel" style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div class="avatar" style="width:60px;height:60px;border-radius:19px;font-size:19px">CX</div><div style="flex:1;min-width:170px"><div id="profileMemberName" style="font-size:18px;font-weight:760;letter-spacing:-.4px">CKXchange member</div><div id="profileMemberEmail" style="color:var(--muted);font-size:11px;margin-top:5px">Sign in to view account</div><div style="margin-top:10px"><span class="live-badge">● Authenticated account</span></div></div><div style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:8px 10px">MEMBER</div></div></div>
 <div class="stats-grid"><div class="stat-card"><div class="stat-top">Total INR sent <svg fill="none" viewbox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></div><div class="stat-value" id="profileTotal">₹0</div><div class="stat-foot">Successful payouts</div></div><div class="stat-card"><div class="stat-top">Saved banks <svg fill="none" viewbox="0 0 24 24"><path d="M4 10h16M6 10V19h12V10M3 19h18M12 3 3 8h18l-9-5Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBanks">0</div><div class="stat-foot">Linked destinations</div></div><div class="stat-card"><div class="stat-top">Wallet balance <svg fill="none" viewbox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" stroke-width="1.6" width="17" x="3.5" y="6"></rect><path d="M3.5 10h17M16 15h1" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"></path></svg></div><div class="stat-value" id="profileBalance">$0.0000</div><div class="stat-foot">Available USDT</div></div></div>
 <section class="page-panel"><h2 class="section-title">App settings</h2><p class="section-caption">Application details and your account controls.</p><div class="settings-list">
-<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.9</div></div>
+<div class="settings-row"><div class="settings-icon"><svg fill="none" viewbox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="1.3"></path></svg></div><div class="settings-content"><div class="settings-name">Application version</div><div class="settings-desc">CKXchange full-stack supervised prototype</div></div><div class="settings-value">v2.4.11</div></div>
 <div class="settings-row" id="pwaInstallRow" hidden><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="settings-content"><div class="settings-name">Install CKXchange</div><div class="settings-desc">Add CKXchange to your device for quick access.</div></div><button class="secondary-btn" id="pwaInstallButton" type="button">Install app</button></div>
 <div class="settings-row theme-setting-row"><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.2A8.6 8.6 0 0 1 8.8 3.5a8.8 8.8 0 1 0 11.7 11.7Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.5 3.5v5m-2.5-2.5h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div><div class="settings-content"><div class="settings-name">Appearance</div><div class="settings-desc" id="themeModeDescription">Light mode is enabled. You can switch to dark mode anytime.</div></div><button class="secondary-btn theme-toggle-button" id="themeModeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false"><span id="themeModeToggleLabel">Switch to dark mode</span></button></div>
 <div class="settings-row"><div class="settings-icon"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div><div class="settings-content"><div class="settings-name">Password &amp; security</div><div class="settings-desc">Change your account password using your current password.</div></div><button class="secondary-btn" id="openChangePassword" type="button" data-go="password">Change password</button></div>
@@ -889,5 +922,5 @@
 <div class="receipt-actions"><button class="primary-btn full" id="downloadReceipt"><svg fill="none" viewbox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg>Download receipt (PNG image)</button><button class="secondary-btn full" id="receiptDone">Done</button></div>
 </section>
 </div>
-<script defer="True" src="/app.js?v=2.4.9"></script></body>
+<script defer="True" src="/app.js?v=2.4.11"></script></body>
 </html>

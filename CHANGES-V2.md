@@ -1,3 +1,21 @@
+## v2.4.11 — Expandable admin request cards
+
+- Changed admin deposit and payout request queues to compact, tappable summary cards with expandable details.
+- Only one request card can be expanded at a time; changing admin queue pages clears the expanded card.
+- Collapsed payout summaries show requester, status, INR amount, account holder, date, and PAY ID. Expanded details retain account number, IFSC, reserved USDT, full timing/ID information, inline copy icons, and status-appropriate actions.
+- Collapsed deposit summaries show requester, Pending/Processing status, requested USDT amount, date, and DEP ID. Expanded details show the full transaction hash with inline copy, requested amount, timestamp, ID, and Verify & Credit / Reject actions.
+- Preserved existing light/dark theme tokens, search, pagination, and server-side approval safeguards.
+- Bumped app, manifest, and service-worker static asset versions to v2.4.11.
+
+## v2.4.10 — Compact admin deposit and payout request cards
+
+- Replaced the horizontally scrollable deposit and payout request tables with stacked, mobile-friendly cards.
+- Payout cards show requester, INR amount, account number, account holder, IFSC, created time, status, and PAY ID; requester email, bank name, and branch are omitted.
+- Deposit cards show requester, full transaction hash, requested USDT, estimated INR, created time, and DEP ID.
+- Replaced request-list text copy buttons with compact inline copy icons beside payout account number, account name, IFSC, and deposit transaction hash.
+- Kept existing color themes and approval/rejection workflows unchanged.
+- Bumped static asset and service-worker cache versions to v2.4.10.
+
 ## v2.4.9 — Password changes and clean payout slip rows
 
 - Added an authenticated password-change page from Profile. Users must provide their current password, a matching confirmation, and a 10–128 character new password containing at least one letter and one number.

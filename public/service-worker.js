@@ -1,14 +1,14 @@
 'use strict';
-const CACHE_NAME = 'ckxchange-static-v2-4-9';
+const CACHE_NAME = 'ckxchange-static-v2-4-11';
 const STATIC_ASSETS = [
   '/offline.html',
   '/manifest.webmanifest',
-  '/icons/ckx-logo-192.png?v=2.4.9',
-  '/icons/ckx-logo-512.png?v=2.4.9',
-  '/icons/icon-192.png?v=2.4.9',
-  '/icons/icon-512.png?v=2.4.9',
-  '/app.js?v=2.4.9',
-  '/theme-init.js?v=2.4.9'
+  '/icons/ckx-logo-192.png?v=2.4.11',
+  '/icons/ckx-logo-512.png?v=2.4.11',
+  '/icons/icon-192.png?v=2.4.11',
+  '/icons/icon-512.png?v=2.4.11',
+  '/app.js?v=2.4.11',
+  '/theme-init.js?v=2.4.11'
 ];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS)).then(() => self.skipWaiting()));
@@ -47,8 +47,8 @@ self.addEventListener('push', event => {
   const title = String(data.title || 'CKXchange notification').slice(0, 80);
   const options = {
     body: String(data.body || 'You have a new CKXchange update.').slice(0, 180),
-    icon: '/icons/ckx-logo-192.png?v=2.4.9',
-    badge: '/icons/ckx-logo-192.png?v=2.4.9',
+    icon: '/icons/ckx-logo-192.png?v=2.4.11',
+    badge: '/icons/ckx-logo-192.png?v=2.4.11',
     tag: String(data.tag || 'ckxchange-update').slice(0, 120),
     renotify: false,
     data: { url: typeof data.url === 'string' && data.url.startsWith('/') && !data.url.startsWith('//') ? data.url : '/' }

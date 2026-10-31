@@ -37,6 +37,7 @@
   let networkConfig = { depositAddress: '', depositConfigured: false };
   let depositAddressRequestVersion = 0;
   let adminLoading = false;
+  let expandedAdminRequestKey = '';
   let adminDepositSettingsLoaded = false;
   let adminSupportSettingsLoaded = false;
   let activeAdminSubPage = 'overview';
@@ -551,6 +552,7 @@
   }
   function setAdminSubPage(route, { historyMode = 'none', load = true } = {}) {
     const subpage = ADMIN_SUBPAGES.includes(route) ? route : 'overview';
+    if (activeAdminSubPage !== subpage) expandedAdminRequestKey = '';
     activeAdminSubPage = subpage;
     document.querySelectorAll('[data-admin-subpage]').forEach(section => { section.hidden = section.dataset.adminSubpage !== subpage; });
     document.querySelectorAll('[data-admin-route]').forEach(link => link.classList.toggle('active', link.dataset.adminRoute === subpage));
@@ -609,6 +611,70 @@
     $('addBankSavedCount').textContent = `${state.banks.length} saved account${state.banks.length === 1 ? '' : 's'}`;
   }
   function statusBadge(status) { return `<span class="status-tag ${statusClass(status)}">${safe(statusText(status))}</span>`; }
+  function adminCopyIcon(value, label) {
+    const raw = String(value ?? '');
+    if (!raw) return '';
+    return `<button class="admin-copy-icon" type="button" data-copy-value="${safe(raw)}" aria-label="Copy ${safe(label)}" title="Copy ${safe(label)}"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.7"/></svg></button>`;
+  }
+  function adminRequestField(label, value, copyValue = '', valueClass = '') {
+    return `<div class="admin-request-field"><span>${safe(label)}</span><div class="admin-request-value ${valueClass}"><strong>${value}</strong>${copyValue ? adminCopyIcon(copyValue, label) : ''}</div></div>`;
+  }
+  function adminRequestSummaryLine(label, value, valueClass = '') {
+    return `<span class="admin-request-summary-line"><span>${safe(label)}</span><strong class="${valueClass}">${value}</strong></span>`;
+  }
+  function adminRequestChevron() {
+    return '<svg class="admin-request-chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  function renderAdminDepositRequest(t) {
+    const requested = Number(t.requestedUsdt ?? t.usdt ?? 0);
+    const hash = String(t.txHash || 'Not provided');
+    const key = `deposit:${t.id}`;
+    const expanded = expandedAdminRequestKey === key;
+    const actions = `<div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}" data-requested-usdt="${safe(requested)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div>`;
+    return `<article class="admin-request-card admin-deposit-request${expanded ? ' is-expanded' : ''}">
+      <button class="admin-request-summary" type="button" data-toggle-admin-request="${safe(key)}" aria-expanded="${expanded}" aria-controls="admin-request-details-${safe(t.id)}">
+        <span class="admin-request-summary-top"><strong class="admin-request-user">${safe(t.userName || 'Unknown user')}</strong>${statusBadge(t.status)}</span>
+        ${adminRequestSummaryLine('Amount', `<span class="admin-request-amount-usdt">$${safe(fmtUsdt(requested, 6))} USDT</span>`)}
+        ${adminRequestSummaryLine('Date', safe(dateText(t.timestamp)))}
+        <span class="admin-request-summary-bottom"><code>DEP ID · ${safe(t.id)}</code><span class="admin-request-expand-label">${expanded ? 'Hide details' : 'View details'} ${adminRequestChevron()}</span></span>
+      </button>
+      <div class="admin-request-details" id="admin-request-details-${safe(t.id)}" ${expanded ? '' : 'hidden'}>
+        <div class="admin-request-fields">
+          ${adminRequestField('User', safe(t.userName || 'Unknown user'))}
+          ${adminRequestField('Transaction hash', `<code class="admin-request-code" title="${safe(hash)}">${safe(hash)}</code>`, t.txHash || '', 'hash')}
+          ${adminRequestField('Requested amount', `$${safe(fmtUsdt(requested, 6))} USDT`)}
+          ${adminRequestField('Created time', safe(dateText(t.timestamp)))}
+          ${adminRequestField('DEP ID', `<code>${safe(t.id)}</code>`)}
+        </div>${actions}
+      </div>
+    </article>`;
+  }
+  function renderAdminPayoutRequest(t) {
+    const actionButtons = `${t.status === 'pending' ? `<button class="primary-btn" data-admin-action="payout-approve" data-id="${safe(t.id)}">Approve</button>` : ''}${t.status === 'processing' ? `<button class="primary-btn" data-admin-action="payout-complete" data-id="${safe(t.id)}">Mark successful</button><button class="secondary-btn" data-admin-action="payout-fail" data-id="${safe(t.id)}">Mark failed</button>` : ''}<button class="danger-btn" data-admin-action="payout-reject" data-id="${safe(t.id)}">Reject</button>`;
+    const amountValue = `<span>${safe(money(t.amount))}</span><small>$${safe(fmtUsdt(t.usdt, 6))} USDT reserved</small>`;
+    const account = String(t.account || masked(t.last4));
+    const key = `payout:${t.id}`;
+    const expanded = expandedAdminRequestKey === key;
+    return `<article class="admin-request-card admin-payout-request${expanded ? ' is-expanded' : ''}">
+      <button class="admin-request-summary" type="button" data-toggle-admin-request="${safe(key)}" aria-expanded="${expanded}" aria-controls="admin-request-details-${safe(t.id)}">
+        <span class="admin-request-summary-top"><strong class="admin-request-user">${safe(t.userName || 'Unknown user')}</strong>${statusBadge(t.status)}</span>
+        ${adminRequestSummaryLine('Amount (INR)', safe(money(t.amount)))}
+        ${adminRequestSummaryLine('Account name', safe(t.holder || '—'))}
+        ${adminRequestSummaryLine('Date', safe(dateText(t.timestamp)))}
+        <span class="admin-request-summary-bottom"><code>PAY ID · ${safe(t.id)}</code><span class="admin-request-expand-label">${expanded ? 'Hide details' : 'View details'} ${adminRequestChevron()}</span></span>
+      </button>
+      <div class="admin-request-details" id="admin-request-details-${safe(t.id)}" ${expanded ? '' : 'hidden'}>
+        <div class="admin-request-fields">
+          ${adminRequestField('Amount (INR)', amountValue)}
+          ${adminRequestField('Account number', safe(account), t.account || '')}
+          ${adminRequestField('Account name', safe(t.holder || '—'), t.holder || '')}
+          ${adminRequestField('IFSC code', safe(t.ifsc || '—'), t.ifsc || '')}
+          ${adminRequestField('Created time', safe(dateText(t.timestamp)))}
+          ${adminRequestField('PAY ID', `<code>${safe(t.id)}</code>`)}
+        </div><div class="admin-actions">${actionButtons}</div>
+      </div>
+    </article>`;
+  }
   function renderRateDisplays() {
     const formatted = money(state.rate);
     if ($('sidebarRateValue')) $('sidebarRateValue').textContent = formatted;
@@ -926,7 +992,7 @@
   function copyAdminValue(value, button) {
     const raw = String(value ?? '');
     if (!raw) { toast('Nothing to copy.','error'); return; }
-    const setCopied = () => { const original = button.textContent; button.textContent = 'Copied'; setTimeout(() => { if (button.isConnected) button.textContent = original; }, 1400); };
+    const setCopied = () => { const original = button.innerHTML; const originalLabel = button.getAttribute('aria-label') || button.title || 'Copy value'; button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; button.classList.add('is-copied'); button.setAttribute('aria-label', 'Copied'); button.title = 'Copied'; setTimeout(() => { if (button.isConnected) { button.innerHTML = original; button.classList.remove('is-copied'); button.setAttribute('aria-label', originalLabel); button.title = originalLabel; } }, 1400); };
     const fallback = () => {
       const area = document.createElement('textarea'); area.value = raw; area.setAttribute('readonly',''); area.style.position = 'fixed'; area.style.opacity = '0'; document.body.appendChild(area); area.select();
       let copied = false; try { copied = document.execCommand('copy'); } catch (_) { copied = false; }
@@ -955,10 +1021,10 @@
         const list = adminLists[kind];
         const data = await request(`/api/admin/transactions?type=${kind === 'deposits' ? 'deposit' : 'payout'}&page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
         if (kind === 'deposits') {
-          $('adminDepositsRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${safe(t.network || 'TRC20')}</div><div class="table-sub">Destination used for this request</div><div class="admin-hash">${safe(t.depositAddress || 'Not recorded by an earlier app version')}</div><div class="table-sub">Transaction hash</div><div class="copy-inline"><code class="admin-hash" title="${safe(t.txHash)}">${safe(shortHash(t.txHash))}</code><button class="admin-copy-btn" type="button" data-copy-value="${safe(t.txHash)}" aria-label="Copy transaction hash for ${safe(t.id)}">Copy hash</button></div></td><td><div class="table-main">${fmtUsdt(t.usdt,6)} USDT</div><div class="table-sub">${money(t.amount)} estimated value</div></td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions"><button class="primary-btn" data-admin-action="deposit-approve" data-id="${safe(t.id)}" data-requested-usdt="${safe(t.requestedUsdt ?? t.usdt)}">Verify &amp; credit</button><button class="danger-btn" data-admin-action="deposit-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
+          $('adminDepositsRows').innerHTML = (data.transactions || []).map(renderAdminDepositRequest).join('');
           $('adminDepositsEmpty').hidden = (data.transactions || []).length !== 0;
         } else {
-          $('adminPayoutRows').innerHTML = (data.transactions || []).map(t => `<tr><td><div class="table-main">${safe(t.userName)} · ${safe(t.holder||'')}</div><div class="table-sub">${safe(t.userEmail)}</div><div class="admin-user-muted">${safe(t.bank||'')} · ${safe(t.branch||'')}</div><div class="copy-inline"><div class="admin-user-muted">A/C ${safe(t.account||masked(t.last4))} · ${safe(t.ifsc||'')}</div>${t.account ? `<button class="admin-copy-btn" type="button" data-copy-value="${safe(t.account)}" aria-label="Copy payout account number for ${safe(t.id)}">Copy account no.</button>` : ''}</div><div class="table-sub">${safe(t.id)}</div></td><td><div class="table-main">${money(t.amount)}</div><div class="table-sub">${fmtUsdt(t.usdt,6)} USDT reserved</div></td><td>${statusBadge(t.status)}${t.bankReference?`<div class="table-sub">Ref: ${safe(t.bankReference)}</div>`:''}</td><td>${safe(dateText(t.timestamp))}</td><td><div class="admin-actions">${t.status==='pending'?`<button class="primary-btn" data-admin-action="payout-approve" data-id="${safe(t.id)}">Approve</button>`:''}${t.status==='processing'?`<button class="primary-btn" data-admin-action="payout-complete" data-id="${safe(t.id)}">Mark successful</button><button class="secondary-btn" data-admin-action="payout-fail" data-id="${safe(t.id)}">Mark failed</button>`:''}<button class="danger-btn" data-admin-action="payout-reject" data-id="${safe(t.id)}">Reject</button></div></td></tr>`).join('');
+          $('adminPayoutRows').innerHTML = (data.transactions || []).map(renderAdminPayoutRequest).join('');
           $('adminPayoutsEmpty').hidden = (data.transactions || []).length !== 0;
         }
         updateAdminPagination(kind, data.pagination);
@@ -990,7 +1056,7 @@
   async function adminAction(button) {
     const action=button.dataset.adminAction, id=button.dataset.id; if(!action||!id||button.disabled) return;
     const originalText = button.textContent;
-    const row = button.closest('tr');
+    const row = button.closest('.admin-request-card');
     const rowButtons = row ? [...row.querySelectorAll('[data-admin-action]')] : [button];
     rowButtons.forEach(item => { item.disabled = true; });
     button.textContent = 'Working…';
@@ -1046,6 +1112,20 @@
 
   document.addEventListener('click', async event => {
     const authTab=event.target.closest('[data-auth-mode]'); if(authTab){setAuthMode(authTab.dataset.authMode); return;}
+    const requestToggle=event.target.closest('[data-toggle-admin-request]'); if(requestToggle){
+      const key=requestToggle.dataset.toggleAdminRequest;
+      const shouldExpand=expandedAdminRequestKey!==key;
+      expandedAdminRequestKey=shouldExpand?key:'';
+      document.querySelectorAll('.admin-request-card').forEach(card=>{
+        const toggle=card.querySelector('[data-toggle-admin-request]');
+        const details=card.querySelector('.admin-request-details');
+        const expanded=shouldExpand && toggle?.dataset.toggleAdminRequest===key;
+        card.classList.toggle('is-expanded',Boolean(expanded));
+        if(toggle){toggle.setAttribute('aria-expanded',String(Boolean(expanded)));const label=toggle.querySelector('.admin-request-expand-label');if(label)label.innerHTML=`${expanded?'Hide details':'View details'} ${adminRequestChevron()}`;}
+        if(details)details.hidden=!expanded;
+      });
+      return;
+    }
     const removeButton=event.target.closest('[data-remove-bank]');
     if(removeButton) {
       const bank=state.banks.find(item=>item.id===removeButton.dataset.removeBank); if(!bank) return;
