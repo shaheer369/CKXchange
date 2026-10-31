@@ -1017,10 +1017,15 @@ app.get('/api/admin/users/:id', async (req, res, next) => {
   try {
     const user = await db.collection('users').findOne({ _id: String(req.params.id) });
     if (!user) return apiError(res, 404, 'User was not found.');
-    const transactions = await db.collection('transactions').find({ user_id: user._id }).sort({ created_at: -1 }).limit(100).toArray();
+    const { page: requestedPage, pageSize } = parseListParams(req);
+    const transactionFilter = { user_id: user._id };
+    const totalTransactions = await db.collection('transactions').countDocuments(transactionFilter);
+    const transactionPages = Math.max(1, Math.ceil(totalTransactions / pageSize));
+    const page = Math.min(requestedPage, transactionPages);
+    const transactions = await db.collection('transactions').find(transactionFilter).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();
     res.set('Cache-Control', 'no-store, max-age=0');
     res.set('Pragma', 'no-cache');
-    res.json({ user: auditSafeUser(user), transactions: transactions.map(row => ({
+    res.json({ user: auditSafeUser(user), transactionPagination: paginationDto(page, pageSize, totalTransactions), transactions: transactions.map(row => ({
       id: row._id, type: row.type, status: row.status,
       amountInr: row.type === 'payout' ? fromPaise(row.amount_paise) : null,
       usdt: fromUsdtMicro(row.usdt_micro),
@@ -1067,7 +1072,16 @@ app.post('/api/admin/users/:id/unblock', mutationLimiter, async (req, res, next)
 app.get('/api/admin/audit', async (req, res, next) => {
   try {
     const { page: requestedPage, pageSize, q } = parseListParams(req);
-    let filter = {};
+    const auditFilterKey = String(req.query.filter || '').trim().toLowerCase();
+    const auditFilterActions = {
+      payout_request: ['payout_requested'],
+      processing: ['payout_approved_processing'],
+      success: ['payout_marked_success_after_reference'],
+      usdt_request: ['deposit_requested'],
+      rejected: ['deposit_rejected', 'payout_rejected_and_reserve_released']
+    };
+    const filterParts = [];
+    if (auditFilterKey && auditFilterActions[auditFilterKey]) filterParts.push({ action: { $in: auditFilterActions[auditFilterKey] } });
     if (q) {
       const regex = new RegExp(escapedRegExp(q), 'i');
       const userIds = await matchingUserIds(q);
@@ -1082,12 +1096,13 @@ app.get('/api/admin/audit', async (req, res, next) => {
         db.collection('transactions').find({ type: 'deposit', $or: depositSearch }, { projection: { _id: 1 } }).limit(500).toArray()
       ]);
       const matchingTargetIds = [...matchingPayouts, ...matchingDeposits].map(row => row._id);
-      filter = { $or: [
+      filterParts.push({ $or: [
         { action: regex }, { target_id: regex }, { admin_id: regex }, { actor_id: regex },
         ...(userIds.length ? [{ admin_id: { $in: userIds } }, { actor_id: { $in: userIds } }] : []),
         ...(matchingTargetIds.length ? [{ target_id: { $in: matchingTargetIds } }] : [])
-      ] };
+      ] });
     }
+    const filter = filterParts.length > 1 ? { $and: filterParts } : (filterParts[0] || {});
     const total = await db.collection('audit_log').countDocuments(filter);
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
     const rows = await db.collection('audit_log').find(filter).sort({ created_at: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray();

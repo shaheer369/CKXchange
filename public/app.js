@@ -39,6 +39,8 @@
   let adminLoading = false;
   let expandedAdminRequestKey = '';
   let selectedAdminUserId = '';
+  let selectedAdminUserTransactionPage = 1;
+  const ADMIN_USER_HISTORY_PAGE_SIZE = 10;
   let blockedScreenSupportLoading = false;
   let adminDepositSettingsLoaded = false;
   let adminSupportSettingsLoaded = false;
@@ -47,7 +49,7 @@
     deposits: { page: 1, pageSize: 25, q: '' },
     payouts: { page: 1, pageSize: 25, q: '' },
     users: { page: 1, pageSize: 25, q: '' },
-    audit: { page: 1, pageSize: 25, q: '' }
+    audit: { page: 1, pageSize: 25, q: '', filter: '' }
   };
   let pollHandle = null;
   let pwaRegistration = null;
@@ -317,7 +319,12 @@
           window.location.replace('/');
           return;
         }
-        if (document.querySelector('#page-admin.active')) await loadAdmin();
+        if (document.querySelector('#page-admin.active')) {
+          const viewingUserDetails = activeAdminSubPage === 'users' && selectedAdminUserId && $('adminUserDetailsView') && !$('adminUserDetailsView').hidden;
+          // Do not refresh the selected user's details while the admin is reading them.
+          // This avoids re-rendering the detail page on the background polling interval.
+          if (!viewingUserDetails) await loadAdmin();
+        }
       } catch (error) {
         if ((error.status === 401 || error.status === 403) && $('page-admin')) {
           window.location.replace('/');
@@ -599,6 +606,7 @@
     if (activeAdminSubPage !== subpage) expandedAdminRequestKey = '';
     if (subpage !== 'users') {
       selectedAdminUserId = '';
+      selectedAdminUserTransactionPage = 1;
       if ($('adminUsersListView')) $('adminUsersListView').hidden = false;
       if ($('adminUserDetailsView')) $('adminUserDetailsView').hidden = true;
     } else if (!selectedAdminUserId) {
@@ -1087,6 +1095,9 @@
       const unit = isPayout ? 'INR payout' : 'USDT deposit';
       return `<div class="user-transaction-row"><div><div class="user-transaction-ref">${safe(txn.id)}</div><div class="user-transaction-meta">${safe(unit)} · ${safe(dateText(txn.createdAt))}</div></div><div class="user-transaction-amount">${safe(amount)}<div class="${statusClass(txn.status)}" style="margin-top:5px">${safe(statusText(txn.status))}</div></div></div>`;
     }).join('');
+    const txPage = payload.transactionPagination || { page: selectedAdminUserTransactionPage, pageSize: ADMIN_USER_HISTORY_PAGE_SIZE, total: rows ? (payload.transactions || []).length : 0, pages: 1 };
+    const txPages = Math.max(1, Number(txPage.pages || 1));
+    const txCurrentPage = Math.min(Math.max(1, Number(txPage.page || 1)), txPages);
     $('adminUserDetailsContent').innerHTML = `
       <div class="user-details-hero">
         <div class="user-details-avatar" aria-hidden="true">${safe(userInitials(user.name))}</div>
@@ -1097,21 +1108,32 @@
         ${userDetailRow('User ID', user.id, true)}${userDetailRow('Email', user.email, true)}${userDetailRow('Phone', user.phoneNumber, true)}${userDetailRow('Telegram ID', user.telegramId, true)}${userDetailRow('Role', user.role)}${userDetailRow('Account status', statusText(status))}${userDetailRow('Joined', dateText(user.createdAt))}${user.deletedAt ? userDetailRow('Deleted on', dateText(user.deletedAt)) : ''}${user.blockedAt ? userDetailRow('Blocked on', dateText(user.blockedAt)) : ''}
       </div></section>
       <section class="user-details-section"><h3 class="user-details-section-title">Wallet balances</h3><div class="user-balance-grid"><div class="user-balance-box"><span>Available USDT</span><strong>${safe(fmtUsdt(user.availableUsdt, 6))}</strong></div><div class="user-balance-box"><span>Reserved USDT</span><strong>${safe(fmtUsdt(user.reservedUsdt, 6))}</strong></div></div></section>
-      <section class="user-details-section"><h3 class="user-details-section-title">Transaction history <span class="profile-count">${(payload.transactions || []).length}</span></h3><div class="user-transaction-list">${rows || '<div class="settings-desc">No transaction history found for this account.</div>'}</div></section>`;
+      <section class="user-details-section"><h3 class="user-details-section-title">Transaction history <span class="profile-count">${Number(txPage.total || 0).toLocaleString('en-IN')}</span></h3><div class="user-transaction-list">${rows || '<div class="settings-desc">No transaction history found for this account.</div>'}</div>
+        <div class="admin-pagination user-transaction-pagination" aria-label="User transaction history pagination"><span>Page ${txCurrentPage} of ${txPages} · ${Number(txPage.total || 0).toLocaleString('en-IN')} transactions</span><div class="admin-pagination-controls"><button class="secondary-btn" type="button" data-admin-user-tx-page="${Math.max(1, txCurrentPage - 1)}" ${txCurrentPage <= 1 ? 'disabled' : ''}>Previous</button><button class="secondary-btn" type="button" data-admin-user-tx-page="${Math.min(txPages, txCurrentPage + 1)}" ${txCurrentPage >= txPages ? 'disabled' : ''}>Next</button></div></div>
+      </section>`;
   }
-  async function openAdminUserDetails(userId) {
+  async function openAdminUserDetails(userId, { page = 1, scroll = true, showLoading = true } = {}) {
     if (state.user?.role !== 'admin') { toast('Administrator access is required.', 'error'); return; }
-    selectedAdminUserId = String(userId || '');
+    const requestedUserId = String(userId || '');
+    if (!requestedUserId) return;
+    selectedAdminUserId = requestedUserId;
+    selectedAdminUserTransactionPage = Math.max(1, Number(page) || 1);
     $('adminUsersListView').hidden = true;
     $('adminUserDetailsView').hidden = false;
-    $('adminUserDetailsContent').innerHTML = '<div class="settings-desc">Loading user details…</div>';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (showLoading) $('adminUserDetailsContent').innerHTML = '<div class="settings-desc">Loading user details…</div>';
+    if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+    const requestedPage = selectedAdminUserTransactionPage;
     try {
-      const payload = await request(`/api/admin/users/${encodeURIComponent(selectedAdminUserId)}`);
-      if (selectedAdminUserId) renderAdminUserDetails(payload);
+      const payload = await request(`/api/admin/users/${encodeURIComponent(requestedUserId)}?page=${requestedPage}&pageSize=${ADMIN_USER_HISTORY_PAGE_SIZE}`);
+      if (selectedAdminUserId === requestedUserId && selectedAdminUserTransactionPage === requestedPage) {
+        selectedAdminUserTransactionPage = Number(payload.transactionPagination?.page || requestedPage);
+        renderAdminUserDetails(payload);
+      }
     } catch (error) {
-      $('adminUserDetailsContent').innerHTML = '<div class="empty-state"><div class="empty-title">Could not load user details</div><div class="empty-desc">Return to the user list and try again.</div></div>';
-      toast(error.message, 'error');
+      if (selectedAdminUserId === requestedUserId && selectedAdminUserTransactionPage === requestedPage) {
+        $('adminUserDetailsContent').innerHTML = '<div class="empty-state"><div class="empty-title">Could not load user details</div><div class="empty-desc">Return to the user list and try again.</div></div>';
+        toast(error.message, 'error');
+      }
     }
   }
   async function performAdminUserAction(button) {
@@ -1131,7 +1153,7 @@
       $('adminUsersRows').innerHTML = (data.users || []).map(renderAdminUserCard).join('');
       $('adminUsersEmpty').hidden = (data.users || []).length !== 0;
       updateAdminPagination('users', data.pagination);
-      await openAdminUserDetails(userId);
+      await openAdminUserDetails(userId, { page: selectedAdminUserTransactionPage, scroll: false, showLoading: false });
     } catch (error) { toast(error.message, 'error'); button.disabled = false; }
   }
   async function loadAdmin({ refreshDepositSettings = false, refreshSupportSettings = false } = {}) {
@@ -1165,10 +1187,9 @@
         $('adminUsersRows').innerHTML = (data.users || []).map(renderAdminUserCard).join('');
         $('adminUsersEmpty').hidden = (data.users || []).length !== 0;
         updateAdminPagination('users', data.pagination);
-        if (selectedAdminUserId && !$('adminUserDetailsView').hidden) await openAdminUserDetails(selectedAdminUserId);
       } else if (activeAdminSubPage === 'audit') {
         const list = adminLists.audit;
-        const data = await request(`/api/admin/audit?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}`);
+        const data = await request(`/api/admin/audit?page=${list.page}&pageSize=${list.pageSize}&q=${encodeURIComponent(list.q)}&filter=${encodeURIComponent(list.filter || '')}`);
         $('adminAuditRows').innerHTML = (data.entries || []).length ? data.entries.map(renderAuditEntry).join('') : '';
         $('adminAuditEmpty').hidden = (data.entries || []).length !== 0;
         updateAdminPagination('audit', data.pagination);
@@ -1265,6 +1286,14 @@
       try { await request(`/api/banks/${encodeURIComponent(bank.id)}`,{method:'DELETE'}); await refreshState({quiet:true}); toast('Saved bank account removed.'); }
       catch(error){toast(error.message,'error');} return;
     }
+    const userTxnPageButton = event.target.closest('[data-admin-user-tx-page]');
+    if (userTxnPageButton && selectedAdminUserId) {
+      const nextPage = Number(userTxnPageButton.dataset.adminUserTxPage);
+      if (Number.isInteger(nextPage) && nextPage >= 1 && nextPage !== selectedAdminUserTransactionPage) {
+        await openAdminUserDetails(selectedAdminUserId, { page: nextPage, scroll: false, showLoading: false });
+      }
+      return;
+    }
     const adminUserCard=event.target.closest('[data-admin-user-open]');
     if(adminUserCard){await openAdminUserDetails(adminUserCard.dataset.adminUserOpen);return;}
     const adminUserAction=event.target.closest('[data-admin-user-action]');
@@ -1284,7 +1313,7 @@
     const previousPage=event.target.closest('[data-admin-page-prev]'); if(previousPage){const kind=previousPage.dataset.adminPagePrev; if(adminLists[kind]&&adminLists[kind].page>1){adminLists[kind].page-=1;await loadAdmin().catch(error=>toast(error.message,'error'));}return;}
     const nextPage=event.target.closest('[data-admin-page-next]'); if(nextPage){const kind=nextPage.dataset.adminPageNext; if(adminLists[kind]){adminLists[kind].page+=1;await loadAdmin().catch(error=>toast(error.message,'error'));}return;}
     const adminRoute=event.target.closest('[data-admin-route]'); if(adminRoute){event.preventDefault(); if(state.user?.role!=='admin'){toast('Administrator access is required.','error');return;} setAdminSubPage(adminRoute.dataset.adminRoute,{historyMode:'push'}); return;}
-    if(event.target.closest('[data-admin-refresh]')){try{await refreshState({quiet:true});await loadAdmin({refreshDepositSettings:true,refreshSupportSettings:true});toast('Admin data refreshed.');}catch(error){toast(error.message,'error');}return;}
+    if(event.target.closest('[data-admin-refresh]')){try{await refreshState({quiet:true});await loadAdmin({refreshDepositSettings:true,refreshSupportSettings:true});if(activeAdminSubPage==='users'&&selectedAdminUserId&&!$('adminUserDetailsView').hidden)await openAdminUserDetails(selectedAdminUserId,{page:selectedAdminUserTransactionPage,scroll:false,showLoading:false});toast('Admin data refreshed.');}catch(error){toast(error.message,'error');}return;}
     const copy=event.target.closest('#copyDepositAddress'); if(copy&&!copy.disabled){try{await navigator.clipboard.writeText(networkConfig.depositAddress);toast('Receiving address copied.');}catch(_){toast('Copy was unavailable; select and copy the address manually.','error');}return;}
     const nav=event.target.closest('[data-page]'); if(nav){go(nav.dataset.page);return;}
     const goButton=event.target.closest('[data-go]'); if(goButton){go(goButton.dataset.go);return;}
@@ -1296,6 +1325,13 @@
     ['users','adminUsersSearchForm','adminUsersSearch'],
     ['audit','adminAuditSearchForm','adminAuditSearch']
   ];
+  const auditFilterSelect = $('adminAuditFilter');
+  if (auditFilterSelect) auditFilterSelect.addEventListener('change', () => {
+    adminLists.audit.filter = auditFilterSelect.value;
+    adminLists.audit.page = 1;
+    if (activeAdminSubPage === 'audit') loadAdmin().catch(error => toast(error.message, 'error'));
+  });
+
   adminSearchForms.forEach(([kind,formId,inputId]) => {
     const form = $(formId); if (!form) return;
     form.addEventListener('submit', event => {

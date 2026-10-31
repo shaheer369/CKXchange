@@ -1,3 +1,10 @@
+# CKXchange v2.4.14
+
+- Prevents background admin polling from reopening the selected user details view.
+- Adds server-side pagination to individual users' transaction history (10 per page).
+- Adds audit-log event filters for payout requests, processing, success, USDT requests, and rejected requests.
+- Removes the Banks item from mobile bottom navigation; bank management remains available from Profile.
+
 ## v2.4.13 — Profile & Settings redesign
 
 - Reorganized Profile into Personal Information, Bank Accounts, Security, Appearance, Notifications, App Settings, and Help & Support sections.
