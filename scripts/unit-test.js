@@ -1,13 +1,22 @@
 'use strict';
 const assert = require('node:assert/strict');
 const {
-  id, toUsdtMicro, fromUsdtMicro, canDeleteWithDustBalance, toPaise, fromPaise, safeEqual, newCsrf,
+  id, toUsdtMicro, fromUsdtMicro, parseUsdtMicro, canDeleteWithDustBalance, toPaise, fromPaise, safeEqual, newCsrf,
   validName, validEmail, validDepositAddress, validTransactionHash, duplicateKeyError
 } = require('../lib/domain');
 
 assert.match(id('USR'), /^USR-[A-F0-9]{18}$/);
 assert.equal(toUsdtMicro(1.234567), 1234567);
 assert.equal(fromUsdtMicro(1234567), 1.234567);
+assert.equal(parseUsdtMicro('1,000.000001'), 1_000_000_001, 'USDT parser must accept standard grouped amounts and preserve six decimals');
+assert.equal(parseUsdtMicro('1,00,000.000001'), 100_000_000_001, 'USDT parser must accept Indian-grouped amounts');
+assert.equal(parseUsdtMicro('$10.000001 USDT'), 10_000_001, 'USDT parser must accept an optional currency prefix and suffix');
+assert.equal(parseUsdtMicro('10000000.000000'), 10_000_000_000_000, 'USDT parser must accept the exact maximum');
+assert.equal(parseUsdtMicro('10000000.000001'), null, 'USDT parser must reject amounts above the maximum');
+assert.equal(parseUsdtMicro('0'), null, 'USDT parser must reject zero');
+assert.equal(parseUsdtMicro('-1'), null, 'USDT parser must reject negative values');
+assert.equal(parseUsdtMicro('1.0000001'), null, 'USDT parser must reject precision beyond six decimals');
+assert.equal(parseUsdtMicro('1,2,3'), null, 'USDT parser must reject malformed grouping');
 assert.equal(canDeleteWithDustBalance(toUsdtMicro(0.01 / 106), 0, 106), true, 'A remaining INR value below ₹1 should not block account deletion');
 assert.equal(canDeleteWithDustBalance(toUsdtMicro(1 / 106), 0, 106), false, 'A remaining INR value of ₹1 should block account deletion');
 assert.equal(canDeleteWithDustBalance(0, 1, 106), false, 'Reserved USDT must always block account deletion');

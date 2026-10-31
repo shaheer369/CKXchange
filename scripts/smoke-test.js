@@ -292,6 +292,18 @@ async function waitForStart(proc, origin) {
   assert.equal(adjustedApproval.data.transaction.requestedUsdt, 10, 'deposit record must retain original requested amount');
   assert.equal(adjustedApproval.data.transaction.creditedUsdt, 12.5, 'deposit record must expose final credited amount');
   assert.equal(adjustedApproval.data.transaction.usdt, 12.5, 'deposit history amount should reflect actual credit after approval');
+  const groupedDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: 'f'.repeat(64) } });
+  assert.equal(groupedDeposit.response.status, 201, 'grouped-amount test deposit should be created for a newly registered customer');
+  const groupedApproval = await api(origin, `/api/admin/deposits/${groupedDeposit.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { creditedUsdt: '1,234.500001', adjustmentReason: 'Verified on-chain amount with grouped input' } });
+  assert.equal(groupedApproval.response.status, 200, `admin approval must accept grouped USDT values: ${JSON.stringify(groupedApproval.data)}`);
+  assert.equal(groupedApproval.data.transaction.creditedUsdt, 1234.500001, 'grouped amount must preserve all six USDT decimals');
+  const precisionDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: '9'.repeat(64) } });
+  const precisionApproval = await api(origin, `/api/admin/deposits/${precisionDeposit.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { creditedUsdt: '0.000001', adjustmentReason: 'Verified on-chain micro amount' } });
+  assert.equal(precisionApproval.response.status, 200, 'admin approval must accept any positive amount down to one USDT micro-unit');
+  assert.equal(precisionApproval.data.transaction.creditedUsdt, 0.000001, 'micro-unit credit must retain exact six-decimal precision');
+  const overLimitDeposit = await api(origin, '/api/deposits', { method: 'POST', cookie: customer.cookie, csrf: customer.csrf, body: { amountUsdt: 10, network: 'TRC20', txHash: '8'.repeat(64) } });
+  const overLimitApproval = await api(origin, `/api/admin/deposits/${overLimitDeposit.data.transaction.id}/approve`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: { creditedUsdt: '10,000,000.000001', adjustmentReason: 'Test upper validation limit' } });
+  assert.equal(overLimitApproval.response.status, 400, 'admin approval must reject amounts above 10,000,000 USDT');
   const adjustedAudit = await api(origin, `/api/admin/audit?q=${encodeURIComponent(adjustedDeposit.data.transaction.id)}`, { cookie: admin.cookie });
   const adjustedApprovalAudit = adjustedAudit.data.entries.find(entry => entry.action === 'deposit_approved_manual_verification');
   assert.ok(adjustedApprovalAudit, 'adjusted deposit approval should create an audit event');

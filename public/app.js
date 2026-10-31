@@ -84,6 +84,20 @@
   };
   const fmtNumber = (value, digits = 4) => Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
   const fmtUsdt = (value, digits = 4) => `$${fmtNumber(value, digits)}`;
+  const MAX_DEPOSIT_CREDIT_MICRO = 10_000_000_000_000;
+  function parseUsdtMicro(value) {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    const raw = String(value).trim().replace(/^\$\s*/, '').replace(/\s*USDT$/i, '').trim();
+    const integer = '(?:\\d+|\\d{1,3}(?:,\\d{3})+|\\d{1,3}(?:,\\d{2})*,\\d{3})';
+    const match = raw.match(new RegExp(`^${integer}(?:\\.(\\d{1,6}))?$`));
+    if (!match) return null;
+    const normalized = raw.replace(/,/g, '');
+    const [whole, fraction = ''] = normalized.split('.');
+    try {
+      const micro = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0'));
+      return micro > 0n && micro <= BigInt(MAX_DEPOSIT_CREDIT_MICRO) ? Number(micro) : null;
+    } catch (_) { return null; }
+  }
   const money = value => '₹' + Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const safe = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
   const statusText = status => ({ active:'Active', blocked:'Blocked', deleted:'Deleted', deleting:'Deletion in progress', pending:'Pending', processing:'Processing', success:'Successful', rejected:'Rejected', failed:'Failed' }[String(status || '').toLowerCase()] || 'Unknown');
@@ -1215,14 +1229,21 @@
     button.textContent = 'Working…';
     try {
       if(action==='deposit-approve') {
-        const requestedUsdt = Number(button.dataset.requestedUsdt);
-        const enteredCredit = prompt(`Customer requested ${fmtUsdt(requestedUsdt, 6)} USDT. Enter the actual USDT amount independently verified on-chain:`, fmtNumber(requestedUsdt, 6));
-        if (enteredCredit === null) return;
-        const creditedUsdt = Number(String(enteredCredit).trim());
-        if (!Number.isFinite(creditedUsdt) || creditedUsdt <= 0 || creditedUsdt > 10_000_000 || Math.round(creditedUsdt * 1_000_000) <= 0) {
-          toast('Enter a valid verified amount greater than 0 and no more than 10,000,000 USDT.', 'error'); return;
+        const requestedMicro = parseUsdtMicro(button.dataset.requestedUsdt);
+        if (requestedMicro === null) {
+          toast('This deposit has an invalid requested amount. No balance was changed; review the transaction record.', 'error'); return;
         }
-        const changedAmount = Math.round(creditedUsdt * 1_000_000) !== Math.round(requestedUsdt * 1_000_000);
+        const requestedUsdt = requestedMicro / 1_000_000;
+        // Do not prefill this prompt with locale-grouped text such as 1,000.000000;
+        // a plain six-decimal value is safe to edit and submit.
+        const enteredCredit = prompt(`Customer requested ${fmtUsdt(requestedUsdt, 6)} USDT. Enter the actual USDT amount independently verified on-chain:`, requestedUsdt.toFixed(6));
+        if (enteredCredit === null) return;
+        const creditedMicro = parseUsdtMicro(enteredCredit);
+        if (creditedMicro === null) {
+          toast('Enter a valid verified amount greater than 0, with up to 6 decimal places and no more than 10,000,000 USDT.', 'error'); return;
+        }
+        const creditedUsdt = creditedMicro / 1_000_000;
+        const changedAmount = creditedMicro !== requestedMicro;
         let adjustmentReason = '';
         if (changedAmount) {
           const reason = prompt('The verified amount differs from the customer request. Enter the reason for this adjustment (at least 3 characters):');

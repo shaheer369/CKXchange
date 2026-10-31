@@ -1,4 +1,14 @@
-# CKXchange v2.4.14
+# CKXchange v2.4.15
+
+## Fixes
+- Fixed admin USDT deposit verification when the requested amount contains thousands separators. The prompt now starts with a plain six-decimal value instead of locale-grouped text that JavaScript cannot parse with `Number()`.
+- Added matching client/server parsing for plain, Western-grouped, and Indian-grouped USDT values, with optional `$` and `USDT` labels.
+- Deposit verification now validates exact micro-unit precision (up to 6 decimal places), accepts any positive verified amount up to and including 10,000,000 USDT, and rejects over-precision or over-limit amounts before crediting.
+- Preserved admin authorization, pending-only checks, adjustment-reason requirements, transaction-safe single credit, ledger entry, audit logging, and owner notification behavior.
+
+## Checks
+- Added unit and integration coverage for grouped values, Indian grouping, the six-decimal minimum unit, maximum amount, malformed separators, and excess decimal precision.
+
 
 - Prevents background admin polling from reopening the selected user details view.
 - Adds server-side pagination to individual users' transaction history (10 per page).

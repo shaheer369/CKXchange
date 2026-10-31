@@ -13,7 +13,7 @@ const { ensureIndexes, inTransaction } = require('./lib/mongo');
 const { MongoClient } = require('mongodb');
 const { getVapidConfig, hasVapidConfig, allowedPushEndpoint, sendPush } = require('./lib/web-push');
 const {
-  id, now, toUsdtMicro, fromUsdtMicro, canDeleteWithDustBalance, toPaise, fromPaise, safeEqual, newCsrf,
+  id, now, toUsdtMicro, fromUsdtMicro, parseUsdtMicro, canDeleteWithDustBalance, toPaise, fromPaise, safeEqual, newCsrf,
   validName, validEmail, validDepositAddress, validTransactionHash, duplicateKeyError
 } = require('./lib/domain');
 
@@ -23,6 +23,7 @@ const PORT = Number(process.env.PORT || 3000);
 const APP_ORIGIN = String(process.env.APP_ORIGIN || '').trim().replace(/\/+$/, '');
 const RATE_DEFAULT = Number(process.env.INR_PER_USDT || 106);
 const MIN_DEPOSIT_USDT = 10;
+const MAX_DEPOSIT_CREDIT_MICRO = 10_000_000_000_000;
 const MIN_PAYOUT_INR = 1000;
 const MAX_PAYOUT_INR = 100_000;
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -1176,9 +1177,10 @@ app.get('/api/admin/audit', async (req, res, next) => {
 app.post('/api/admin/deposits/:id/approve', mutationLimiter, async (req, res, next) => {
   try {
     const rawCreditAmount = req.body?.creditedUsdt;
-    const requestedCredit = rawCreditAmount === undefined || rawCreditAmount === null || rawCreditAmount === '' ? null : Number(rawCreditAmount);
-    if (requestedCredit !== null && (!Number.isFinite(requestedCredit) || requestedCredit <= 0 || requestedCredit > 10_000_000)) {
-      return apiError(res, 400, 'Enter a verified credit amount greater than 0 and no more than 10,000,000 USDT.');
+    const hasCreditOverride = rawCreditAmount !== undefined && rawCreditAmount !== null && !(typeof rawCreditAmount === 'string' && rawCreditAmount.trim() === '');
+    const requestedCreditMicro = hasCreditOverride ? parseUsdtMicro(rawCreditAmount) : null;
+    if (hasCreditOverride && requestedCreditMicro === null) {
+      return apiError(res, 400, 'Enter a valid USDT amount greater than 0, with up to 6 decimal places and no more than 10,000,000 USDT.');
     }
     const adjustmentReason = String(req.body?.adjustmentReason || '').trim().slice(0, 500);
     const result = await runTransaction(async mongoSession => {
@@ -1187,8 +1189,9 @@ app.post('/api/admin/deposits/:id/approve', mutationLimiter, async (req, res, ne
       if (!txn) throw new Error('NOT_FOUND');
       if (txn.status !== 'pending') throw new Error('NOT_PENDING');
       const requestedMicro = txn.requested_usdt_micro ?? txn.usdt_micro;
-      const creditedMicro = requestedCredit === null ? requestedMicro : toUsdtMicro(requestedCredit);
-      if (!Number.isSafeInteger(creditedMicro) || creditedMicro <= 0 || creditedMicro > 10_000_000_000_000) throw new Error('INVALID_CREDIT_AMOUNT');
+      if (!Number.isSafeInteger(requestedMicro) || requestedMicro <= 0 || requestedMicro > MAX_DEPOSIT_CREDIT_MICRO) throw new Error('INVALID_CREDIT_AMOUNT');
+      const creditedMicro = requestedCreditMicro === null ? requestedMicro : requestedCreditMicro;
+      if (!Number.isSafeInteger(creditedMicro) || creditedMicro <= 0 || creditedMicro > MAX_DEPOSIT_CREDIT_MICRO) throw new Error('INVALID_CREDIT_AMOUNT');
       const adjusted = creditedMicro !== requestedMicro;
       if (adjusted && adjustmentReason.length < 3) throw new Error('ADJUSTMENT_REASON_REQUIRED');
       // Preserve the rate that was shown when the customer submitted the request. Older
